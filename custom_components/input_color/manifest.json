@@ -1,0 +1,10 @@
+{
+  "domain": "input_color",
+  "name": "Input Color",
+  "version": "0.1.0",
+  "documentation": "https://github.com/kkilchrist/ha-color-ext",
+  "issue_tracker": "https://github.com/kkilchrist/ha-color-ext/issues",
+  "codeowners": ["@kkilchrist"],
+  "config_flow": true,
+  "integration_type": "helper"
+}

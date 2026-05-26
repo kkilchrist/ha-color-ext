@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "input_color"
+version = "0.1.0"
+description = "Color helper for Home Assistant (HACS custom integration)."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.13"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+norecursedirs = [".reference", ".venv", "build", "dist"]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+extend-exclude = [".reference"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # bugbear
+    "C4",  # comprehensions
+    "PT",  # pytest style
+    "RET", # return
+    "SIM", # simplify
+]
+ignore = [
+    "E501", # line length handled by formatter
+]

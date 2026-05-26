@@ -1,0 +1,116 @@
+"""Reproduce an Input Color state for scenes."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import re
+from collections.abc import Iterable
+from typing import Any
+
+from homeassistant.const import ATTR_ENTITY_ID
+from homeassistant.core import Context, HomeAssistant, State
+
+from .const import (
+    ATTR_BRIGHTNESS,
+    ATTR_COLOR_TEMP_KELVIN,
+    ATTR_KIND,
+    DOMAIN,
+    FIELD_BRIGHTNESS,
+    FIELD_HEX,
+    FIELD_KELVIN,
+    KIND_WHITE,
+    SERVICE_CLEAR_BRIGHTNESS,
+    SERVICE_SET_BRIGHTNESS,
+    SERVICE_SET_COLOR,
+)
+
+_LOGGER = logging.getLogger(__name__)
+_HEX_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
+
+
+async def _async_reproduce_state(
+    hass: HomeAssistant,
+    state: State,
+    *,
+    context: Context | None = None,
+    reproduce_options: dict[str, Any] | None = None,
+) -> None:
+    """Reproduce a single Input Color state.
+
+    Resilient to two snapshot defects we've seen in the wild:
+    - state may be a non-hex sentinel like "unavailable" or "" from a
+      partial-load capture; we skip the color call in that case
+    - the brightness attribute may be missing entirely (older snapshots)
+      vs. explicitly null; only act on explicit absence by leaving
+      brightness untouched
+    """
+    if hass.states.get(state.entity_id) is None:
+        _LOGGER.warning("Unable to find entity %s", state.entity_id)
+        return
+
+    attrs = state.attributes
+    kind = attrs.get(ATTR_KIND)
+
+    # Pick the highest-precision representation in the snapshot.
+    color_data: dict[str, Any] | None = None
+    if kind == KIND_WHITE and attrs.get(ATTR_COLOR_TEMP_KELVIN) is not None:
+        color_data = {FIELD_KELVIN: attrs[ATTR_COLOR_TEMP_KELVIN]}
+    elif isinstance(state.state, str) and _HEX_RE.match(state.state):
+        color_data = {FIELD_HEX: state.state}
+    else:
+        _LOGGER.debug(
+            "Skipping color restore for %s: state %r not a valid representation",
+            state.entity_id,
+            state.state,
+        )
+
+    if color_data is not None:
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_COLOR,
+            {ATTR_ENTITY_ID: state.entity_id, **color_data},
+            context=context,
+            blocking=True,
+        )
+
+    # Brightness branches on explicit presence rather than None vs missing.
+    if ATTR_BRIGHTNESS in attrs:
+        snapshot_brightness = attrs[ATTR_BRIGHTNESS]
+        if snapshot_brightness is None:
+            await hass.services.async_call(
+                DOMAIN,
+                SERVICE_CLEAR_BRIGHTNESS,
+                {ATTR_ENTITY_ID: state.entity_id},
+                context=context,
+                blocking=True,
+            )
+        else:
+            await hass.services.async_call(
+                DOMAIN,
+                SERVICE_SET_BRIGHTNESS,
+                {
+                    ATTR_ENTITY_ID: state.entity_id,
+                    FIELD_BRIGHTNESS: snapshot_brightness,
+                },
+                context=context,
+                blocking=True,
+            )
+
+
+async def async_reproduce_states(
+    hass: HomeAssistant,
+    states: Iterable[State],
+    *,
+    context: Context | None = None,
+    reproduce_options: dict[str, Any] | None = None,
+) -> None:
+    """Reproduce Input Color states in parallel."""
+    await asyncio.gather(
+        *(
+            _async_reproduce_state(
+                hass, state, context=context, reproduce_options=reproduce_options
+            )
+            for state in states
+        )
+    )

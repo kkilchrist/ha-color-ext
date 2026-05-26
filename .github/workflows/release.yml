@@ -1,0 +1,38 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    name: Build release zip
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate version matches manifest
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          manifest_version=$(python -c "import json; print(json.load(open('custom_components/input_color/manifest.json'))['version'])")
+          tag_version="${TAG#v}"
+          if [ "$manifest_version" != "$tag_version" ]; then
+            echo "Manifest version ($manifest_version) does not match tag ($tag_version)"
+            exit 1
+          fi
+
+      - name: Build zip
+        run: |
+          cd custom_components/input_color
+          zip -r ../../input_color.zip .
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: input_color.zip
+          generate_release_notes: true
