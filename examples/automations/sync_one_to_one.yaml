@@ -1,0 +1,21 @@
+# Simplest possible sync: one input_color drives one light.
+# Replace the two entity_ids and you're done.
+#
+# This is the same logic the bundled blueprint provides — included as raw
+# YAML for users who prefer to copy-paste rather than import a blueprint.
+
+automation:
+  - alias: Couch light follows couch color
+    description: Push any change in input_color.couch_color to light.couch.
+    mode: restart
+    trigger:
+      - platform: state
+        entity_id: input_color.couch_color
+    action:
+      - service: input_color.apply_to
+        target:
+          entity_id: input_color.couch_color
+        data:
+          lights:
+            - light.couch
+          override_brightness: false

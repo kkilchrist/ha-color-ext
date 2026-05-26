@@ -1,0 +1,49 @@
+blueprint:
+  name: Sync Input Color to Lights
+  description: >
+    Whenever the value of an input_color helper changes, push the new color to
+    one or more lights via input_color.apply_to. The dispatcher sends xy_color
+    for chromatic colors and color_temp_kelvin for whites; Home Assistant's
+    light integration converts to whatever each target supports.
+  domain: automation
+  source_url: https://github.com/kkilchrist/ha-color-ext/blob/main/blueprints/automation/input_color_sync_to_lights.yaml
+  input:
+    color_source:
+      name: Color source
+      description: The input_color helper to follow.
+      selector:
+        entity:
+          filter:
+            integration: input_color
+    target_lights:
+      name: Target lights
+      description: Lights to update whenever the color source changes.
+      selector:
+        entity:
+          filter:
+            domain: light
+          multiple: true
+    override_brightness:
+      name: Override brightness
+      description: >
+        If on AND the input_color has a stored brightness, the brightness will
+        also be applied to the lights. If off, each light keeps its current
+        brightness and only the color changes.
+      default: false
+      selector:
+        boolean:
+
+mode: restart
+max_exceeded: silent
+
+trigger:
+  - platform: state
+    entity_id: !input color_source
+
+action:
+  - service: input_color.apply_to
+    target:
+      entity_id: !input color_source
+    data:
+      lights: !input target_lights
+      override_brightness: !input override_brightness

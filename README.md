@@ -135,11 +135,20 @@ data:
 | `brightness` | `0-255` or `null` |
 | `hex_color` | Same as state, repeated for convenience |
 
+## Blueprints and examples
+
+- **[blueprints/](blueprints/)** — one-click importable blueprints. Start with
+  "Sync Input Color to Lights" for the most common pattern.
+- **[examples/](examples/)** — raw YAML snippets for scripts, automations,
+  and scenes. Includes a `demo_walkthrough.yaml` script that cycles a single
+  input_color through every input shape with 2-second delays so you can see
+  each one render.
+
 ## Scene support
 
 Scenes can capture an input color and replay it. `scene.create` and
 `scene.apply` both work; on replay we re-call `set_color` and `set_brightness`
-to restore the snapshot.
+to restore the snapshot. See `examples/scenes/scene_capture.yaml`.
 
 ## Limitations
 

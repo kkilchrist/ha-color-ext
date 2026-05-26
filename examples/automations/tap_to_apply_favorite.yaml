@@ -1,0 +1,32 @@
+# The "favorite preset" pattern: a button helper triggers apply_to of a
+# pre-stored input_color. Lets you build a row of one-tap shortcuts on a
+# dashboard — each button is a different saved color, optionally with its
+# own stored brightness.
+#
+# Setup:
+#   1. Create input_color.evening_warm (Settings → Add Integration → Input Color).
+#      Set initial mode to "White (color temperature)" and pick e.g. 2700K.
+#   2. Create input_button.set_evening (Settings → Helpers → Button).
+#   3. Paste this automation into Settings → Automations & Scenes → Edit in YAML.
+#   4. Drop the input_button on a Lovelace dashboard. Tapping it applies the
+#      stored color + brightness to your chosen lights.
+
+automation:
+  - alias: Tap "Evening" → apply evening_warm to living room lights
+    description: One-tap preset; the input_color holds the actual values.
+    mode: single
+    trigger:
+      - platform: state
+        entity_id: input_button.set_evening
+    action:
+      - service: input_color.apply_to
+        target:
+          entity_id: input_color.evening_warm
+        data:
+          lights:
+            - light.living_room_lamp
+            - light.living_room_strip
+            - light.kitchen_island
+          # Push the stored brightness too — that's what makes this a full
+          # "preset" rather than just a color change.
+          override_brightness: true

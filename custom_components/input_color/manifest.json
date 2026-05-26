@@ -6,5 +6,6 @@
   "issue_tracker": "https://github.com/kkilchrist/ha-color-ext/issues",
   "codeowners": ["@kkilchrist"],
   "config_flow": true,
-  "integration_type": "helper"
+  "integration_type": "helper",
+  "iot_class": "calculated"
 }
