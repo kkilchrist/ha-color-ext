@@ -24,6 +24,9 @@ jobs:
         uses: hacs/action@main
         with:
           category: integration
+          # Skip the brands check until we file a PR to home-assistant/brands.
+          # Users can install via HACS custom-repo URL in the meantime.
+          ignore: brands
 
   lint:
     name: Ruff

@@ -1,11 +1,11 @@
 {
   "domain": "input_color",
   "name": "Input Color",
-  "version": "0.1.0",
-  "documentation": "https://github.com/kkilchrist/ha-color-ext",
-  "issue_tracker": "https://github.com/kkilchrist/ha-color-ext/issues",
   "codeowners": ["@kkilchrist"],
   "config_flow": true,
+  "documentation": "https://github.com/kkilchrist/ha-color-ext",
   "integration_type": "helper",
-  "iot_class": "calculated"
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/kkilchrist/ha-color-ext/issues",
+  "version": "0.1.0"
 }
