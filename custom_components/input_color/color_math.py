@@ -176,3 +176,41 @@ def derive_kelvin(canonical: CanonicalColor) -> int | None:
 def derive_hex(canonical: CanonicalColor) -> str:
     r, g, b = derive_rgb(canonical)
     return "#" + color_util.color_rgb_to_hex(r, g, b).upper()
+
+
+def compute_source_hex(inputs: dict[str, Any]) -> str | None:
+    """Return the literal hex equivalent of the user's input, if one exists.
+
+    For inputs that map cleanly to a single sRGB triple (hex/rgb/hs/
+    color_name) we can echo back the exact bytes the user supplied without
+    losing them to the xy gamut round-trip. For xy/kelvin inputs there is
+    no canonical "source hex" so we return None.
+
+    Callers pass the same dict they'd give to `normalize`; this peeks at
+    whichever key is set.
+    """
+    if FIELD_HEX in inputs and inputs[FIELD_HEX] is not None:
+        try:
+            r, g, b = _hex_to_rgb(str(inputs[FIELD_HEX]))
+        except ColorInputError:
+            return None
+    elif FIELD_RGB in inputs and inputs[FIELD_RGB] is not None:
+        try:
+            r, g, b = _validate_rgb(inputs[FIELD_RGB])
+        except ColorInputError:
+            return None
+    elif FIELD_HS in inputs and inputs[FIELD_HS] is not None:
+        try:
+            h, s = _validate_hs(inputs[FIELD_HS])
+        except ColorInputError:
+            return None
+        r, g, b = color_util.color_hs_to_RGB(h, s)
+    elif FIELD_COLOR_NAME in inputs and inputs[FIELD_COLOR_NAME] is not None:
+        try:
+            r, g, b = color_util.color_name_to_rgb(str(inputs[FIELD_COLOR_NAME]))
+        except ValueError:
+            return None
+    else:
+        return None
+
+    return "#" + color_util.color_rgb_to_hex(int(r), int(g), int(b)).upper()

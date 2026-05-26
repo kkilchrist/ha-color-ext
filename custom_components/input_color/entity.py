@@ -13,6 +13,7 @@ from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 from .color_math import (
     CanonicalColor,
     ColorInputError,
+    compute_source_hex,
     derive_hex,
     derive_hs,
     derive_kelvin,
@@ -26,6 +27,7 @@ from .const import (
     ATTR_HS_COLOR,
     ATTR_KIND,
     ATTR_RGB_COLOR,
+    ATTR_SOURCE_HEX,
     ATTR_XY_COLOR,
     CONF_INITIAL_BRIGHTNESS,
     CONF_INITIAL_COLOR,
@@ -50,9 +52,11 @@ class _StoredColor(ExtraStoredData):
         self,
         canonical: CanonicalColor,
         brightness: int | None,
+        source_hex: str | None = None,
     ) -> None:
         self.canonical = canonical
         self.brightness = brightness
+        self.source_hex = source_hex
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -61,6 +65,7 @@ class _StoredColor(ExtraStoredData):
             "kind": self.canonical.kind,
             "kelvin": self.canonical.kelvin,
             "brightness": self.brightness,
+            "source_hex": self.source_hex,
         }
 
     @classmethod
@@ -76,9 +81,12 @@ class _StoredColor(ExtraStoredData):
             brightness = data.get("brightness")
             if brightness is not None:
                 brightness = int(brightness)
+            source_hex = data.get("source_hex")
+            if source_hex is not None:
+                source_hex = str(source_hex)
         except (KeyError, TypeError, ValueError):
             return None
-        return cls(canonical, brightness)
+        return cls(canonical, brightness, source_hex)
 
 
 class InputColorEntity(RestoreEntity):
@@ -94,6 +102,7 @@ class InputColorEntity(RestoreEntity):
         # without requiring an integration reload.
         self._canonical: CanonicalColor = self._initial_canonical(entry)
         self._brightness: int | None = self._initial_brightness(entry)
+        self._source_hex: str | None = self._initial_source_hex(entry)
 
     @property
     def name(self) -> str | None:
@@ -120,6 +129,17 @@ class InputColorEntity(RestoreEntity):
             return normalize({FIELD_HEX: initial})
         except ColorInputError:
             return normalize({FIELD_HEX: DEFAULT_HEX})
+
+    @staticmethod
+    def _initial_source_hex(entry: ConfigEntry) -> str | None:
+        """Compute source_hex from the initial config (or None for white-init)."""
+        mode = entry.data.get(CONF_INITIAL_MODE)
+        if mode == MODE_WHITE:
+            return None
+        initial = entry.data.get(CONF_INITIAL_COLOR)
+        if not initial:
+            return None
+        return compute_source_hex({FIELD_HEX: initial})
 
     @staticmethod
     def _initial_brightness(entry: ConfigEntry) -> int | None:
@@ -151,13 +171,14 @@ class InputColorEntity(RestoreEntity):
             ATTR_COLOR_TEMP_KELVIN: derive_kelvin(self._canonical),
             ATTR_BRIGHTNESS: self._brightness,
             ATTR_HEX_COLOR: derive_hex(self._canonical),
+            ATTR_SOURCE_HEX: self._source_hex,
         }
 
     # ---- restore ---------------------------------------------------------
 
     @property
     def extra_restore_state_data(self) -> ExtraStoredData | None:
-        return _StoredColor(self._canonical, self._brightness)
+        return _StoredColor(self._canonical, self._brightness, self._source_hex)
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
@@ -167,6 +188,7 @@ class InputColorEntity(RestoreEntity):
             if stored is not None:
                 self._canonical = stored.canonical
                 self._brightness = stored.brightness
+                self._source_hex = stored.source_hex
 
     # ---- setters --------------------------------------------------------
 
@@ -176,6 +198,11 @@ class InputColorEntity(RestoreEntity):
         color_shape = dict(shape)
         brightness = color_shape.pop(ATTR_BRIGHTNESS, None)
         self._canonical = normalize(color_shape)
+        # source_hex tracks the user's literal input when it had a hex
+        # equivalent (hex/rgb/hs/color_name). For xy/kelvin inputs it becomes
+        # None, which is the right semantic: there's no "source hex" for
+        # those — the user picked a chromaticity or a kelvin, not a color.
+        self._source_hex = compute_source_hex(color_shape)
         if brightness is not None:
             self._brightness = max(0, min(255, int(brightness)))
         self.async_write_ha_state()
@@ -194,6 +221,7 @@ class InputColorEntity(RestoreEntity):
         self,
         target_entity_ids: list[str],
         override_brightness: bool = False,
+        brightness: int | None = None,
     ) -> None:
         """Apply this color to one or more lights via light.turn_on.
 
@@ -202,6 +230,13 @@ class InputColorEntity(RestoreEntity):
         `supported_color_modes` the target actually advertises. We make a
         single batched service call so HA fans out per-light failures
         independently rather than fail-stopping on the first error.
+
+        Brightness precedence (so apply_to stays the canonical entry point
+        even when the caller wants a one-off value):
+        1. Explicit `brightness` argument wins if provided (0-255).
+        2. Else if `override_brightness=True` AND a brightness is stored on
+           this entity, push the stored value.
+        3. Else: omit brightness — each target light keeps its current level.
         """
         if not target_entity_ids:
             return
@@ -212,7 +247,9 @@ class InputColorEntity(RestoreEntity):
             x, y = self._canonical.xy
             color_data = {light.ATTR_XY_COLOR: [x, y]}
 
-        if override_brightness and self._brightness is not None:
+        if brightness is not None:
+            color_data[light.ATTR_BRIGHTNESS] = max(0, min(255, int(brightness)))
+        elif override_brightness and self._brightness is not None:
             color_data[light.ATTR_BRIGHTNESS] = self._brightness
 
         await self.hass.services.async_call(

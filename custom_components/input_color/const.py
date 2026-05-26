@@ -28,6 +28,11 @@ ATTR_HS_COLOR: Final = "hs_color"
 ATTR_COLOR_TEMP_KELVIN: Final = "color_temp_kelvin"
 ATTR_BRIGHTNESS: Final = "brightness"
 ATTR_HEX_COLOR: Final = "hex_color"
+# Exact-byte echo of the user's input when it had a clear hex equivalent
+# (hex/rgb/hs/color_name). Null for xy/kelvin inputs. Lets consumers read
+# back precisely what was set, independent of the gamut-mapped xy used for
+# apply_to.
+ATTR_SOURCE_HEX: Final = "source_hex"
 
 # Service names.
 SERVICE_SET_COLOR: Final = "set_color"

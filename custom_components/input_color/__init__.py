@@ -82,6 +82,8 @@ _CLEAR_BRIGHTNESS_SCHEMA: dict[Any, Any] = {}
 _APPLY_TO_SCHEMA: dict[Any, Any] = {
     vol.Required(FIELD_LIGHTS): vol.All(cv.ensure_list, [cv.entity_id]),
     vol.Optional(FIELD_OVERRIDE_BRIGHTNESS, default=False): cv.boolean,
+    # Explicit per-call brightness; wins over override_brightness+stored.
+    vol.Optional(FIELD_BRIGHTNESS): vol.All(vol.Coerce(int), vol.Range(min=0, max=255)),
 }
 
 
@@ -120,6 +122,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         await entity.async_apply_to(
             call.data[FIELD_LIGHTS],
             override_brightness=call.data.get(FIELD_OVERRIDE_BRIGHTNESS, False),
+            brightness=call.data.get(FIELD_BRIGHTNESS),
         )
 
     component.async_register_entity_service(SERVICE_SET_COLOR, _SET_COLOR_SCHEMA, _wrap_set_color)

@@ -120,7 +120,16 @@ data:
     - light.living_room_strip
     - light.ceiling_island
   override_brightness: false   # if true, also push the stored brightness
+  # brightness: 200            # OR set an explicit per-call brightness
 ```
+
+**Brightness precedence:**
+1. Explicit `brightness` field wins (0-255) — useful when a script wants
+   this color with a per-call brightness without touching stored state
+   (e.g. workout intervals where each phase has its own brightness).
+2. Else if `override_brightness: true` AND the input_color has a stored
+   brightness, push the stored value.
+3. Else: omit brightness — each target light keeps its current level.
 
 ## Attributes
 
@@ -134,6 +143,7 @@ data:
 | `color_temp_kelvin` | Stored value when `kind == "white"`; `null` for chromatic colors |
 | `brightness` | `0-255` or `null` |
 | `hex_color` | Same as state, repeated for convenience |
+| `source_hex` | Exact echo of the user's input when it had a hex equivalent (hex/rgb/hs/color_name). `null` for xy/kelvin inputs. Read this when you need the bytes the user picked, independent of the gamut-mapped value used for `apply_to`. |
 
 ## Blueprints and examples
 
@@ -149,6 +159,65 @@ data:
 Scenes can capture an input color and replay it. `scene.create` and
 `scene.apply` both work; on replay we re-call `set_color` and `set_brightness`
 to restore the snapshot. See `examples/scenes/scene_capture.yaml`.
+
+## Reading the color in scripts and automations
+
+The two most useful patterns:
+
+```yaml
+# Use the color in a light.turn_on directly. Robust to missing entity.
+service: light.turn_on
+data:
+  entity_id: light.island
+  rgb_color: "{{ state_attr('input_color.gym_work_color', 'rgb_color') | default([255, 0, 0]) }}"
+
+# Same but with explicit brightness for this call only — no stored state.
+service: input_color.apply_to
+target:
+  entity_id: input_color.gym_work_color
+data:
+  lights: [light.island]
+  brightness: 255          # explicit; ignores stored brightness
+```
+
+For exact reads (no gamut drift), use `source_hex`:
+
+```yaml
+{{ state_attr('input_color.x', 'source_hex') or state('input_color.x') }}
+```
+
+This returns the literal hex the user picked (when set via hex/rgb/hs/name),
+or falls back to the gamut-mapped state for xy/kelvin inputs.
+
+## Creating entries programmatically
+
+The normal install flow is the UI (Settings → Devices & services → Add
+Integration → "Input Color"). If you need to create entries from a script
+or another integration, the ConfigEntry `data` dict shape is:
+
+```python
+{
+    "name": "Couch Color",                # required, becomes entity title
+    "initial_mode": "chromatic",          # or "white"
+    "initial_color": "#FF8000",           # required if mode=chromatic; hex string
+    "initial_kelvin": 4000,               # required if mode=white; int Kelvin
+    "initial_brightness": 200,            # optional; 0-255
+    "icon": "mdi:palette",                # optional; MDI icon string
+}
+```
+
+Then start a config flow:
+```python
+result = await hass.config_entries.flow.async_init(
+    "input_color",
+    context={"source": "user"},
+    data={...},  # not actually consumed at user step; flow walks steps
+)
+```
+
+In practice most callers build entries via `MockConfigEntry`-like patterns
+in tests, or simply prompt the user through the UI. See `config_flow.py`
+for the multi-step shape; `const.py` for field names.
 
 ## Limitations
 

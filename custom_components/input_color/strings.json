@@ -97,8 +97,12 @@
           "description": "Light entities to apply the color to."
         },
         "override_brightness": {
-          "name": "Override brightness",
-          "description": "If true and a brightness is stored, include it in the light.turn_on call."
+          "name": "Override brightness (use stored value)",
+          "description": "If true and a brightness is stored, include it in the light.turn_on call. Ignored when the explicit brightness field is set."
+        },
+        "brightness": {
+          "name": "Brightness (explicit)",
+          "description": "Per-call brightness 0-255. Wins over override_brightness when set."
         }
       }
     }

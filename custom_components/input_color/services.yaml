@@ -107,11 +107,23 @@ apply_to:
           domain: light
           multiple: true
     override_brightness:
-      name: Override brightness
+      name: Override brightness (use stored value)
       description: >
-        If true and a brightness is stored on this input_color, include it in
-        the light.turn_on call. If false, the target light keeps its current
-        brightness.
+        If true AND a brightness is stored on this input_color, include the
+        stored brightness in the light.turn_on call. Ignored when the
+        `brightness` field below is set explicitly.
       default: false
       selector:
         boolean:
+    brightness:
+      name: Brightness (explicit)
+      description: >
+        Optional per-call brightness 0-255. When set, wins over
+        override_brightness. Useful when scripts want this color with a
+        specific brightness without touching the stored value.
+      example: 200
+      selector:
+        number:
+          min: 0
+          max: 255
+          mode: slider

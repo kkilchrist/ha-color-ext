@@ -427,3 +427,162 @@ def test_coerce_color_input_unexpected_types_fall_back() -> None:
 def test_coerce_color_input_passes_through_strings_and_triples() -> None:
     assert _coerce_color_input("#ABCDEF") == "#ABCDEF"
     assert _coerce_color_input([255, 128, 0]) == "#FF8000"
+
+
+# ----------------------------------------------------------------------
+# apply_to: explicit brightness wins over override_brightness+stored.
+# This is what restores apply_to as a one-stop entry point for scripts
+# that want "this color, this brightness" without touching stored state.
+# ----------------------------------------------------------------------
+
+
+async def test_apply_to_explicit_brightness_wins_over_stored(
+    hass: HomeAssistant,
+) -> None:
+    entity_id = await _setup_entity(hass)
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SET_BRIGHTNESS,
+        {ATTR_ENTITY_ID: entity_id, FIELD_BRIGHTNESS: 150},
+        blocking=True,
+    )
+
+    captured: list[dict[str, Any]] = []
+
+    async def _capture(call):
+        captured.append(dict(call.data))
+
+    hass.services.async_register("light", "turn_on", _capture)
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_APPLY_TO,
+        {
+            ATTR_ENTITY_ID: entity_id,
+            FIELD_LIGHTS: ["light.fake"],
+            # Both knobs set: explicit must win.
+            FIELD_OVERRIDE_BRIGHTNESS: True,
+            FIELD_BRIGHTNESS: 60,
+        },
+        blocking=True,
+    )
+    assert captured[0]["brightness"] == 60
+
+
+async def test_apply_to_explicit_brightness_without_stored(
+    hass: HomeAssistant,
+) -> None:
+    """Explicit brightness works even when nothing is stored."""
+    entity_id = await _setup_entity(hass)
+    captured: list[dict[str, Any]] = []
+
+    async def _capture(call):
+        captured.append(dict(call.data))
+
+    hass.services.async_register("light", "turn_on", _capture)
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_APPLY_TO,
+        {
+            ATTR_ENTITY_ID: entity_id,
+            FIELD_LIGHTS: ["light.fake"],
+            FIELD_BRIGHTNESS: 200,
+        },
+        blocking=True,
+    )
+    assert captured[0]["brightness"] == 200
+
+
+# ----------------------------------------------------------------------
+# source_hex: hex/rgb/hs/color_name inputs round-trip exactly; xy/kelvin
+# inputs produce null. This is the addressable answer to the xy gamut
+# round-trip surprise the other Claude flagged.
+# ----------------------------------------------------------------------
+
+
+async def test_source_hex_exact_for_hex_input(hass: HomeAssistant) -> None:
+    entity_id = await _setup_entity(hass)
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SET_COLOR,
+        {ATTR_ENTITY_ID: entity_id, "hex_value": "#0050FF"},
+        blocking=True,
+    )
+    state = hass.states.get(entity_id)
+    # source_hex echoes the user's bytes exactly, normalized to uppercase.
+    assert state.attributes["source_hex"] == "#0050FF"
+    # The xy-derived hex_color may drift due to gamut mapping; that's fine.
+    # We only assert source_hex precision here.
+
+
+async def test_source_hex_null_for_xy_input(hass: HomeAssistant) -> None:
+    entity_id = await _setup_entity(hass)
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SET_COLOR,
+        {ATTR_ENTITY_ID: entity_id, "xy_color": [0.3, 0.4]},
+        blocking=True,
+    )
+    assert hass.states.get(entity_id).attributes["source_hex"] is None
+
+
+async def test_source_hex_null_for_kelvin_input(hass: HomeAssistant) -> None:
+    entity_id = await _setup_entity(hass)
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SET_COLOR,
+        {ATTR_ENTITY_ID: entity_id, "color_temp_kelvin": 3000},
+        blocking=True,
+    )
+    assert hass.states.get(entity_id).attributes["source_hex"] is None
+
+
+async def test_source_hex_for_color_name(hass: HomeAssistant) -> None:
+    """Named colors resolve to a deterministic source hex."""
+    entity_id = await _setup_entity(hass)
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SET_COLOR,
+        {ATTR_ENTITY_ID: entity_id, "color_name": "red"},
+        blocking=True,
+    )
+    state = hass.states.get(entity_id)
+    # CSS3 "red" is exactly #FF0000 — no gamut math involved.
+    assert state.attributes["source_hex"] == "#FF0000"
+
+
+async def test_source_hex_persists_across_restart(hass: HomeAssistant) -> None:
+    """source_hex must survive the restore round-trip."""
+    entity_id = "input_color.persisted"
+    extra = {
+        "version": 1,
+        "xy": [0.4, 0.4],
+        "kind": "chromatic",
+        "kelvin": None,
+        "brightness": None,
+        "source_hex": "#0050FF",
+    }
+    from pytest_homeassistant_custom_component.common import (
+        mock_restore_cache_with_extra_data,
+    )
+
+    mock_restore_cache_with_extra_data(
+        hass,
+        [(State(entity_id, "#0000FF", {}), extra)],
+    )
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Persisted",
+        data={
+            CONF_NAME: "Persisted",
+            CONF_INITIAL_MODE: MODE_CHROMATIC,
+            CONF_INITIAL_COLOR: "#FFFFFF",
+        },
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert hass.states.get(entity_id).attributes["source_hex"] == "#0050FF"
