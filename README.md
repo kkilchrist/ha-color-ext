@@ -131,6 +131,45 @@ data:
    brightness, push the stored value.
 3. Else: omit brightness — each target light keeps its current level.
 
+### How `apply_to` works — exact behavior
+
+The dispatcher is intentionally small: it picks one of two color shapes
+based on `kind`, optionally adds brightness per the precedence above, and
+sends one batched `light.turn_on` call. Home Assistant's light component
+handles per-fixture conversion from there.
+
+**What `apply_to` sends, given helper state + call options:**
+
+| Helper kind | Stored brightness | Call `brightness` | Call `override_brightness` | `light.turn_on` payload |
+|---|---|---|---|---|
+| chromatic | any | absent | any | `xy_color: [x, y]` |
+| chromatic | `null` | absent | `true` | `xy_color` (no brightness — nothing stored) |
+| chromatic | `150` | absent | `false` | `xy_color` (override is off) |
+| chromatic | `150` | absent | `true` | `xy_color`, `brightness: 150` |
+| chromatic | any | `60` | any | `xy_color`, `brightness: 60` (explicit wins) |
+| white(2700K) | `null` | absent | any | `color_temp_kelvin: 2700` |
+| white(2700K) | `200` | absent | `true` | `color_temp_kelvin: 2700`, `brightness: 200` |
+| white(2700K) | `200` | `60` | `true` | `color_temp_kelvin: 2700`, `brightness: 60` |
+
+**What Home Assistant then does with our payload, per target light:**
+
+| We send | Target's `supported_color_modes` | HA's behavior |
+|---|---|---|
+| `xy_color` | includes `xy` | passes through; Hue-style gamut clamp applies |
+| `xy_color` | includes `rgb`, `rgbw`, or `rgbww` (no xy) | converts xy → sRGB internally |
+| `xy_color` | includes `hs` only | converts xy → hs |
+| `xy_color` | `color_temp` only (tunable-white bulb) | McCamy-approximates xy → kelvin; meaningful near the Planckian locus, arbitrary for saturated colors |
+| `color_temp_kelvin` | includes `color_temp` | passes through; clamped to bulb's `min/max_color_temp_kelvin` |
+| `color_temp_kelvin` | RGB/HS/XY only (no `color_temp`) | converts kelvin → Planckian-locus xy → target's preferred shape |
+
+So a `kind=white` helper applied to a chromatic RGB strip yields the
+Planckian-locus chromaticity for the chosen Kelvin — the right answer.
+A `kind=chromatic` saturated red applied to a tunable-white bulb yields
+a very-low McCamy kelvin, which is technically meaningless but is what
+the user implicitly asked for. If you want stricter behavior, branch
+in your automation on the helper's `kind` attribute before calling
+`apply_to`.
+
 ## Attributes
 
 | Attribute | Description |
@@ -154,11 +193,52 @@ data:
   input_color through every input shape with 2-second delays so you can see
   each one render.
 
-## Scene support
+## Composition with scenes — the underrated pattern
 
-Scenes can capture an input color and replay it. `scene.create` and
-`scene.apply` both work; on replay we re-call `set_color` and `set_brightness`
-to restore the snapshot. See `examples/scenes/scene_capture.yaml`.
+`input_color` composes with scenes; it doesn't compete with them. This is
+the most useful pattern in the integration and worth understanding before
+you build anything else.
+
+The integration ships a `reproduce_state` hook, which means **scenes that
+include an input_color entity snapshot its full canonical state** (kind,
+xy, kelvin, brightness) — and restore it on `scene.turn_on`.
+
+The composition that falls out:
+
+| Layer | Holds | Mutable | Example |
+|---|---|---|---|
+| `input_color` helper | A named color you can edit | Yes | `input_color.favorite_blue` |
+| `scene` | A frozen moment, including the helper's value | No (until you re-create it) | `scene.movie_night` |
+
+A user-facing workflow that becomes natural:
+
+1. **Edit the favorite** from a dashboard card or automation — the
+   `input_color` is the named slot. Change it whenever.
+2. **Capture a moment** with `scene.create snapshot_entities: [input_color.x, light.a, light.b]`. The scene now remembers the helper's value at capture time **and** the lights' state.
+3. **Restore later** with `scene.turn_on` — both the helper and the lights
+   snap back to what they were when you captured.
+
+This is different from a static scene because the helper between captures
+is editable: you can build a "Living Room — Evening" scene that includes
+`input_color.living_room_color`, then later edit that helper to a new
+favorite, then re-capture the scene to update the snapshot. The helper is
+the *named handle*; the scene is the *frozen application*.
+
+It's also the answer to "but scenes already do this" — they do, for
+literal device states. `input_color` adds a *named, reusable color value*
+that scenes can include alongside device states, without you having to
+hardcode hex values in the scene YAML.
+
+See `examples/scenes/scene_capture.yaml` for a concrete walk-through.
+
+## Scene support (technical)
+
+Internally we implement `async_reproduce_states` so `scene.create` /
+`scene.turn_on` round-trip the helper's canonical state through restore
+data — the lossy hex `state` is sufficient for chromatic colors, and the
+`kind`/`color_temp_kelvin` attributes carry the white-temperature path.
+Malformed snapshots (state=`unavailable`, missing brightness attr) are
+tolerated — see `reproduce_state.py`.
 
 ## Reading the color in scripts and automations
 
