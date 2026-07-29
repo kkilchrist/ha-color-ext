@@ -1,11 +1,11 @@
-# Use the same input_color for every phase of a workout, but pin a
+# Use the same color for every phase of a workout, but pin a
 # different brightness per phase via apply_to's explicit `brightness`
 # field. This was the use case that motivated the explicit override:
 # you want "this color, this brightness for *this* phase" without
 # touching the stored brightness on the helper.
 #
 # Setup:
-#   - input_color.gym_work_color holds whatever color you want for the
+#   - color.gym_work_color holds whatever color you want for the
 #     active block. The stored brightness is irrelevant here because every
 #     call sets it explicitly.
 #   - light.gym is your light or light group.
@@ -14,9 +14,9 @@ script:
   workout_phase_work:
     alias: Workout — work phase (full brightness)
     sequence:
-      - service: input_color.apply_to
+      - service: color.apply_to
         target:
-          entity_id: input_color.gym_work_color
+          entity_id: color.gym_work_color
         data:
           lights:
             - light.gym
@@ -25,9 +25,9 @@ script:
   workout_phase_rest:
     alias: Workout — rest phase (40% brightness)
     sequence:
-      - service: input_color.apply_to
+      - service: color.apply_to
         target:
-          entity_id: input_color.gym_work_color
+          entity_id: color.gym_work_color
         data:
           lights:
             - light.gym
@@ -44,9 +44,9 @@ script:
             - service: script.workout_phase_rest
             - delay: "00:00:30"
       # End on a calm low-brightness state.
-      - service: input_color.apply_to
+      - service: color.apply_to
         target:
-          entity_id: input_color.gym_work_color
+          entity_id: color.gym_work_color
         data:
           lights:
             - light.gym

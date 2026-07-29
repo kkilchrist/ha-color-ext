@@ -1,1 +1,1 @@
-"""Tests for the Input Color helper."""
+"""Tests for the Color helper."""

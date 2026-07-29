@@ -1,4 +1,4 @@
-"""Integration tests for setup/unload of an input_color config entry."""
+"""Integration tests for setup/unload of an color config entry."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.input_color.const import (
+from custom_components.color.const import (
     CONF_INITIAL_COLOR,
     CONF_INITIAL_MODE,
     DOMAIN,
@@ -17,7 +17,7 @@ from custom_components.input_color.const import (
 
 @pytest.mark.asyncio
 async def test_setup_and_unload_chromatic_entry(hass: HomeAssistant) -> None:
-    """A chromatic config entry produces a single input_color.* entity."""
+    """A chromatic config entry produces a single color.* entity."""
     entry = MockConfigEntry(
         domain=DOMAIN,
         title="Couch Color",

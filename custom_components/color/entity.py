@@ -1,4 +1,4 @@
-"""Entity class for the Input Color helper."""
+"""Entity class for the Color helper."""
 
 from __future__ import annotations
 
@@ -22,6 +22,7 @@ from .color_math import (
 )
 from .const import (
     ATTR_BRIGHTNESS,
+    ATTR_COLOR_PARAMS,
     ATTR_COLOR_TEMP_KELVIN,
     ATTR_HEX_COLOR,
     ATTR_HS_COLOR,
@@ -89,7 +90,7 @@ class _StoredColor(ExtraStoredData):
         return cls(canonical, brightness, source_hex)
 
 
-class InputColorEntity(RestoreEntity):
+class ColorEntity(RestoreEntity):
     """A color value with multiple representations and an apply-to dispatcher."""
 
     _attr_should_poll = False
@@ -172,7 +173,28 @@ class InputColorEntity(RestoreEntity):
             ATTR_BRIGHTNESS: self._brightness,
             ATTR_HEX_COLOR: derive_hex(self._canonical),
             ATTR_SOURCE_HEX: self._source_hex,
+            ATTR_COLOR_PARAMS: self._color_params(),
         }
+
+    def _color_params(self) -> dict[str, Any]:
+        """Payload splattable directly into light.turn_on.
+
+        `{"xy_color": [x, y]}` for chromatic, `{"color_temp_kelvin": k}` for
+        white, plus `"brightness"` when one is stored (matching light-profile
+        semantics, where a profile carries color and brightness together).
+        The light component converts per-target capability, so consumers
+        never branch on kind or fixture support:
+
+            data: "{{ state_attr('color.evening_amber', 'color_params') }}"
+        """
+        if self._canonical.kind == KIND_WHITE and self._canonical.kelvin is not None:
+            params: dict[str, Any] = {light.ATTR_COLOR_TEMP_KELVIN: self._canonical.kelvin}
+        else:
+            x, y = self._canonical.xy
+            params = {light.ATTR_XY_COLOR: [x, y]}
+        if self._brightness is not None:
+            params[light.ATTR_BRIGHTNESS] = self._brightness
+        return params
 
     # ---- restore ---------------------------------------------------------
 

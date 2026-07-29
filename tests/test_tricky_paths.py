@@ -23,11 +23,11 @@ from pytest_homeassistant_custom_component.common import (
     mock_restore_cache_with_extra_data,
 )
 
-from custom_components.input_color.config_flow import (
+from custom_components.color.config_flow import (
     CONF_ICON,
     _coerce_color_input,
 )
-from custom_components.input_color.const import (
+from custom_components.color.const import (
     ATTR_KIND,
     CONF_INITIAL_BRIGHTNESS,
     CONF_INITIAL_COLOR,
@@ -45,7 +45,7 @@ from custom_components.input_color.const import (
     SERVICE_SET_COLOR,
     STATE_SCHEMA_VERSION,
 )
-from custom_components.input_color.reproduce_state import async_reproduce_states
+from custom_components.color.reproduce_state import async_reproduce_states
 
 # ----------------------------------------------------------------------
 # Restore: the most dangerous gap. Hex state is lossy; only the extra_data
@@ -57,7 +57,7 @@ from custom_components.input_color.reproduce_state import async_reproduce_states
 async def test_restore_round_trip_preserves_white_kind_and_kelvin(
     hass: HomeAssistant,
 ) -> None:
-    entity_id = "input_color.couch_color"
+    entity_id = "color.couch_color"
     extra = {
         "version": STATE_SCHEMA_VERSION,
         "xy": [0.4341, 0.4036],  # 2700K-ish Planckian xy
@@ -99,7 +99,7 @@ async def test_restore_round_trip_with_malformed_extra_falls_back(
     hass: HomeAssistant,
 ) -> None:
     """A garbage extra_data payload should not crash; entity falls back to initial."""
-    entity_id = "input_color.x"
+    entity_id = "color.x"
     mock_restore_cache_with_extra_data(
         hass,
         [(State(entity_id, "#FFFFFF", {}), {"this": "is not valid"})],
@@ -554,7 +554,7 @@ async def test_source_hex_for_color_name(hass: HomeAssistant) -> None:
 
 async def test_source_hex_persists_across_restart(hass: HomeAssistant) -> None:
     """source_hex must survive the restore round-trip."""
-    entity_id = "input_color.persisted"
+    entity_id = "color.persisted"
     extra = {
         "version": 1,
         "xy": [0.4, 0.4],

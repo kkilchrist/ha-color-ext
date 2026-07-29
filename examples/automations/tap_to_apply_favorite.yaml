@@ -1,10 +1,10 @@
 # The "favorite preset" pattern: a button helper triggers apply_to of a
-# pre-stored input_color. Lets you build a row of one-tap shortcuts on a
+# pre-stored color. Lets you build a row of one-tap shortcuts on a
 # dashboard — each button is a different saved color, optionally with its
 # own stored brightness.
 #
 # Setup:
-#   1. Create input_color.evening_warm (Settings → Add Integration → Input Color).
+#   1. Create color.evening_warm (Settings → Add Integration → Color).
 #      Set initial mode to "White (color temperature)" and pick e.g. 2700K.
 #   2. Create input_button.set_evening (Settings → Helpers → Button).
 #   3. Paste this automation into Settings → Automations & Scenes → Edit in YAML.
@@ -13,15 +13,15 @@
 
 automation:
   - alias: Tap "Evening" → apply evening_warm to living room lights
-    description: One-tap preset; the input_color holds the actual values.
+    description: One-tap preset; the color holds the actual values.
     mode: single
     trigger:
       - platform: state
         entity_id: input_button.set_evening
     action:
-      - service: input_color.apply_to
+      - service: color.apply_to
         target:
-          entity_id: input_color.evening_warm
+          entity_id: color.evening_warm
         data:
           lights:
             - light.living_room_lamp

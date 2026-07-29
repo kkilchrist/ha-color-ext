@@ -1,8 +1,8 @@
-"""Config flow for the Input Color helper.
+"""Config flow for the Color helper.
 
 Each color is its own ConfigEntry. The flow runs once at create-time; users edit
 name/icon via the options flow afterwards. The initial color itself is also
-editable via the entity service `input_color.set_color` at runtime, so the
+editable via the entity service `color.set_color` at runtime, so the
 flow is intentionally minimal — pick a name, an initial color or kelvin, and
 done.
 """
@@ -111,7 +111,7 @@ def _coerce_color_input(raw: Any) -> str:
     return DEFAULT_HEX
 
 
-class InputColorConfigFlow(ConfigFlow, domain=DOMAIN):
+class ColorConfigFlow(ConfigFlow, domain=DOMAIN):
     """Two-step flow: pick mode, then pick the corresponding initial value."""
 
     VERSION = 1
@@ -162,10 +162,10 @@ class InputColorConfigFlow(ConfigFlow, domain=DOMAIN):
     @staticmethod
     @callback
     def async_get_options_flow(entry: ConfigEntry) -> OptionsFlow:
-        return InputColorOptionsFlow(entry)
+        return ColorOptionsFlow(entry)
 
 
-class InputColorOptionsFlow(OptionsFlow):
+class ColorOptionsFlow(OptionsFlow):
     """Options flow lets the user change the icon after creation."""
 
     def __init__(self, entry: ConfigEntry) -> None:

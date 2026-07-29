@@ -1,10 +1,10 @@
-"""Constants for the Input Color helper."""
+"""Constants for the Color helper."""
 
 from __future__ import annotations
 
 from typing import Final
 
-DOMAIN: Final = "input_color"
+DOMAIN: Final = "color"
 
 CONF_INITIAL_COLOR: Final = "initial_color"
 CONF_INITIAL_BRIGHTNESS: Final = "initial_brightness"
@@ -33,6 +33,12 @@ ATTR_HEX_COLOR: Final = "hex_color"
 # back precisely what was set, independent of the gamut-mapped xy used for
 # apply_to.
 ATTR_SOURCE_HEX: Final = "source_hex"
+# Dict splattable directly into a light.turn_on call with no templating
+# branches: {"xy_color": [x, y]} for chromatic, {"color_temp_kelvin": k} for
+# white, plus "brightness" when one is stored (mirroring light profiles,
+# which also carry brightness). The light component converts per-target
+# capability, so callers never branch on kind or fixture support.
+ATTR_COLOR_PARAMS: Final = "color_params"
 
 # Service names.
 SERVICE_SET_COLOR: Final = "set_color"

@@ -9,7 +9,7 @@ from homeassistant.const import ATTR_ENTITY_ID, CONF_NAME
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.input_color.const import (
+from custom_components.color.const import (
     CONF_INITIAL_COLOR,
     CONF_INITIAL_MODE,
     DOMAIN,
@@ -220,3 +220,53 @@ async def test_set_color_rejects_multiple_shapes(hass: HomeAssistant) -> None:
             },
             blocking=True,
         )
+
+
+@pytest.mark.asyncio
+async def test_color_params_chromatic(hass: HomeAssistant) -> None:
+    """Chromatic value exposes xy_color only; brightness appears when stored."""
+    entity_id = await _create_entry(hass)
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SET_COLOR,
+        {ATTR_ENTITY_ID: entity_id, "hex_value": "#FF0000"},
+        blocking=True,
+    )
+    params = hass.states.get(entity_id).attributes["color_params"]
+    assert set(params) == {"xy_color"}
+    x, y = params["xy_color"]
+    rounded = hass.states.get(entity_id).attributes["xy_color"]
+    assert [round(x, 4), round(y, 4)] == rounded
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SET_BRIGHTNESS,
+        {ATTR_ENTITY_ID: entity_id, FIELD_BRIGHTNESS: 128},
+        blocking=True,
+    )
+    params = hass.states.get(entity_id).attributes["color_params"]
+    assert set(params) == {"xy_color", "brightness"}
+    assert params["brightness"] == 128
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_CLEAR_BRIGHTNESS,
+        {ATTR_ENTITY_ID: entity_id},
+        blocking=True,
+    )
+    params = hass.states.get(entity_id).attributes["color_params"]
+    assert "brightness" not in params
+
+
+@pytest.mark.asyncio
+async def test_color_params_white(hass: HomeAssistant) -> None:
+    """White value exposes color_temp_kelvin, never xy_color."""
+    entity_id = await _create_entry(hass)
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SET_COLOR,
+        {ATTR_ENTITY_ID: entity_id, "color_temp_kelvin": 3000, FIELD_BRIGHTNESS: 200},
+        blocking=True,
+    )
+    params = hass.states.get(entity_id).attributes["color_params"]
+    assert params == {"color_temp_kelvin": 3000, "brightness": 200}

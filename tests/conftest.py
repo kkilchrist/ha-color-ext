@@ -1,4 +1,4 @@
-"""Shared pytest fixtures for the Input Color helper."""
+"""Shared pytest fixtures for the Color helper."""
 
 from __future__ import annotations
 

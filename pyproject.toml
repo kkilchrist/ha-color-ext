@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "input_color"
+name = "color"
 version = "0.1.0"
 description = "Color helper for Home Assistant (HACS custom integration)."
 readme = "README.md"

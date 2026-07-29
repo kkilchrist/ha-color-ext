@@ -1,4 +1,4 @@
-"""Reproduce an Input Color state for scenes."""
+"""Reproduce an Color state for scenes."""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ async def _async_reproduce_state(
     context: Context | None = None,
     reproduce_options: dict[str, Any] | None = None,
 ) -> None:
-    """Reproduce a single Input Color state.
+    """Reproduce a single Color state.
 
     Resilient to two snapshot defects we've seen in the wild:
     - state may be a non-hex sentinel like "unavailable" or "" from a
@@ -105,7 +105,7 @@ async def async_reproduce_states(
     context: Context | None = None,
     reproduce_options: dict[str, Any] | None = None,
 ) -> None:
-    """Reproduce Input Color states in parallel."""
+    """Reproduce Color states in parallel."""
     await asyncio.gather(
         *(
             _async_reproduce_state(

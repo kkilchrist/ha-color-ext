@@ -1,5 +1,5 @@
 {
-  "title": "Input Color",
+  "title": "Color",
   "config": {
     "step": {
       "user": {
@@ -13,7 +13,7 @@
       },
       "chromatic": {
         "title": "Initial chromatic color",
-        "description": "Pick the starting color. You can change it later via the input_color.set_color service.",
+        "description": "Pick the starting color. You can change it later via the color.set_color service.",
         "data": {
           "initial_color": "Initial color",
           "initial_brightness": "Initial brightness (optional)"
@@ -21,7 +21,7 @@
       },
       "white": {
         "title": "Initial color temperature",
-        "description": "Pick the starting color temperature. You can change it later via the input_color.set_color service.",
+        "description": "Pick the starting color temperature. You can change it later via the color.set_color service.",
         "data": {
           "initial_kelvin": "Color temperature",
           "initial_brightness": "Initial brightness (optional)"

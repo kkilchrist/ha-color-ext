@@ -1,6 +1,6 @@
 {
-  "domain": "input_color",
-  "name": "Input Color",
+  "domain": "color",
+  "name": "Color",
   "codeowners": ["@kkilchrist"],
   "config_flow": true,
   "documentation": "https://github.com/kkilchrist/ha-color-ext",

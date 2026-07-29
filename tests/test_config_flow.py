@@ -8,7 +8,7 @@ from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 
-from custom_components.input_color.const import (
+from custom_components.color.const import (
     CONF_INITIAL_KELVIN,
     CONF_INITIAL_MODE,
     DOMAIN,

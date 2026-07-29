@@ -6,8 +6,8 @@ set_color:
     independent of the color shape.
   target:
     entity:
-      integration: input_color
-      domain: input_color
+      integration: color
+      domain: color
   fields:
     hex_value:
       name: Hex
@@ -63,8 +63,8 @@ set_brightness:
   description: "Set the stored brightness to a value 0-255."
   target:
     entity:
-      integration: input_color
-      domain: input_color
+      integration: color
+      domain: color
   fields:
     brightness:
       name: Brightness
@@ -84,8 +84,8 @@ clear_brightness:
     even when override_brightness is true.
   target:
     entity:
-      integration: input_color
-      domain: input_color
+      integration: color
+      domain: color
 
 apply_to:
   name: Apply to lights
@@ -95,8 +95,8 @@ apply_to:
     integration converts to the target's supported_color_modes automatically.
   target:
     entity:
-      integration: input_color
-      domain: input_color
+      integration: color
+      domain: color
   fields:
     lights:
       name: Target lights
@@ -109,7 +109,7 @@ apply_to:
     override_brightness:
       name: Override brightness (use stored value)
       description: >
-        If true AND a brightness is stored on this input_color, include the
+        If true AND a brightness is stored on this color, include the
         stored brightness in the light.turn_on call. Ignored when the
         `brightness` field below is set explicitly.
       default: false

@@ -1,85 +1,85 @@
-# Cycles a single input_color through every accepted input shape so you can
+# Cycles a single color through every accepted input shape so you can
 # see each one render in the UI (and on a light, if you wire one in).
 #
 # Setup:
-#   1. Create an input_color via Settings → Devices & services → Add Integration
-#      → "Input Color". Call it whatever you want; we use input_color.demo here.
+#   1. Create an color via Settings → Devices & services → Add Integration
+#      → "Color". Call it whatever you want; we use color.demo here.
 #   2. Optional: replace `light.demo_light` with one of your lights to see the
 #      colors physically.
 #   3. Paste this into Settings → Automations & Scenes → Scripts → "Edit in YAML".
-#   4. Trigger from Developer Tools → Services: script.input_color_demo_walkthrough.
+#   4. Trigger from Developer Tools → Services: script.color_demo_walkthrough.
 
 script:
-  input_color_demo_walkthrough:
-    alias: Input Color — demo walkthrough
-    description: Cycles input_color.demo through every input shape with 2s delays.
+  color_demo_walkthrough:
+    alias: Color — demo walkthrough
+    description: Cycles color.demo through every input shape with 2s delays.
     mode: restart
     sequence:
       # --- HEX -----------------------------------------------------------
-      - service: input_color.set_color
+      - service: color.set_color
         target:
-          entity_id: input_color.demo
+          entity_id: color.demo
         data:
           hex_value: "#FF0000"
-      - service: input_color.apply_to
+      - service: color.apply_to
         target:
-          entity_id: input_color.demo
+          entity_id: color.demo
         data:
           lights:
             - light.demo_light
       - delay: "00:00:02"
 
       # --- RGB triplet ---------------------------------------------------
-      - service: input_color.set_color
+      - service: color.set_color
         target:
-          entity_id: input_color.demo
+          entity_id: color.demo
         data:
           rgb_color: [0, 255, 0]
-      - service: input_color.apply_to
+      - service: color.apply_to
         target:
-          entity_id: input_color.demo
+          entity_id: color.demo
         data:
           lights:
             - light.demo_light
       - delay: "00:00:02"
 
       # --- HS (hue + saturation) -----------------------------------------
-      - service: input_color.set_color
+      - service: color.set_color
         target:
-          entity_id: input_color.demo
+          entity_id: color.demo
         data:
           hs_color: [240, 100]  # pure blue
-      - service: input_color.apply_to
+      - service: color.apply_to
         target:
-          entity_id: input_color.demo
+          entity_id: color.demo
         data:
           lights:
             - light.demo_light
       - delay: "00:00:02"
 
       # --- CIE xy chromaticity -------------------------------------------
-      - service: input_color.set_color
+      - service: color.set_color
         target:
-          entity_id: input_color.demo
+          entity_id: color.demo
         data:
           xy_color: [0.4, 0.5]  # warm yellow-green
-      - service: input_color.apply_to
+      - service: color.apply_to
         target:
-          entity_id: input_color.demo
+          entity_id: color.demo
         data:
           lights:
             - light.demo_light
       - delay: "00:00:02"
 
       # --- Color name (CSS3) ---------------------------------------------
-      - service: input_color.set_color
+      - service: color.set_color
         target:
-          entity_id: input_color.demo
+          entity_id: color.demo
         data:
           color_name: crimson
-      - service: input_color.apply_to
+      - service: color.apply_to
         target:
-          entity_id: input_color.demo
+          entity_id: color.demo
         data:
           lights:
             - light.demo_light
@@ -88,14 +88,14 @@ script:
       # --- Color temperature (Kelvin) ------------------------------------
       # This sets kind=white. apply_to will send color_temp_kelvin to lights
       # that support it, and converted xy to lights that don't.
-      - service: input_color.set_color
+      - service: color.set_color
         target:
-          entity_id: input_color.demo
+          entity_id: color.demo
         data:
           color_temp_kelvin: 2700
-      - service: input_color.apply_to
+      - service: color.apply_to
         target:
-          entity_id: input_color.demo
+          entity_id: color.demo
         data:
           lights:
             - light.demo_light
@@ -104,14 +104,14 @@ script:
       # --- Brightness override -------------------------------------------
       # Store a brightness alongside the color, then push both with
       # override_brightness=true.
-      - service: input_color.set_brightness
+      - service: color.set_brightness
         target:
-          entity_id: input_color.demo
+          entity_id: color.demo
         data:
           brightness: 100
-      - service: input_color.apply_to
+      - service: color.apply_to
         target:
-          entity_id: input_color.demo
+          entity_id: color.demo
         data:
           lights:
             - light.demo_light
@@ -119,6 +119,6 @@ script:
       - delay: "00:00:02"
 
       # --- Clear brightness ----------------------------------------------
-      - service: input_color.clear_brightness
+      - service: color.clear_brightness
         target:
-          entity_id: input_color.demo
+          entity_id: color.demo

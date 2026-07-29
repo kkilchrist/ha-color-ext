@@ -1,12 +1,12 @@
-# Input Color — Home Assistant helper
+# Color — Home Assistant helper
 
-A reusable color value for Home Assistant. Each `input_color` is a color you
+A reusable color value for Home Assistant. Each `color` is a color you
 can store, edit, reference from automations, capture in scenes, and apply to
 one or more lights. Think of it like `input_number` or `input_boolean`, but
 the value is a color.
 
 Installs as a custom integration via [HACS](https://hacs.xyz). Lives entirely
-in `custom_components/input_color/` — no frontend bundle, just the standard
+in `custom_components/color/` — no frontend bundle, just the standard
 Home Assistant attribute display and service-call UI.
 
 ## Why this exists
@@ -56,55 +56,55 @@ instead of a converted-then-reconverted xy.
 ### HACS (recommended)
 
 1. Add this repository as a custom HACS repository (category: Integration)
-2. Search for "Input Color" in HACS → Integrations → Explore & Add
+2. Search for "Color" in HACS → Integrations → Explore & Add
 3. Install, then restart Home Assistant
-4. Settings → Devices & Services → **Add Integration** → "Input Color"
+4. Settings → Devices & Services → **Add Integration** → "Color"
 
 Each color you want is one integration instance (one config entry per color).
 
 ### Manual
 
-Copy `custom_components/input_color/` into `<config>/custom_components/`,
+Copy `custom_components/color/` into `<config>/custom_components/`,
 restart Home Assistant, and add the integration from the UI.
 
 ## Services
 
-### `input_color.set_color`
+### `color.set_color`
 
 Set the stored color. Provide exactly one of `hex_value`, `rgb_color`,
 `hs_color`, `xy_color`, `color_temp_kelvin`, or `color_name`. Brightness is
 optional and independent of the color shape.
 
 ```yaml
-service: input_color.set_color
+service: color.set_color
 target:
-  entity_id: input_color.couch_color
+  entity_id: color.couch_color
 data:
   hex_value: "#FF8000"
 ```
 
 ```yaml
-service: input_color.set_color
+service: color.set_color
 target:
-  entity_id: input_color.evening_warm
+  entity_id: color.evening_warm
 data:
   color_temp_kelvin: 2700
   brightness: 180
 ```
 
-### `input_color.set_brightness`
+### `color.set_brightness`
 
 Set or clear the stored brightness. Pass `null` to clear.
 
 ```yaml
-service: input_color.set_brightness
+service: color.set_brightness
 target:
-  entity_id: input_color.couch_color
+  entity_id: color.couch_color
 data:
   brightness: 200
 ```
 
-### `input_color.apply_to`
+### `color.apply_to`
 
 Send the stored color to one or more lights. The dispatcher sends
 `color_temp_kelvin` for whites and `xy_color` for chromatic colors; Home
@@ -112,9 +112,9 @@ Assistant's light integration converts to whatever `supported_color_modes`
 each target advertises.
 
 ```yaml
-service: input_color.apply_to
+service: color.apply_to
 target:
-  entity_id: input_color.couch_color
+  entity_id: color.couch_color
 data:
   lights:
     - light.living_room_strip
@@ -127,7 +127,7 @@ data:
 1. Explicit `brightness` field wins (0-255) — useful when a script wants
    this color with a per-call brightness without touching stored state
    (e.g. workout intervals where each phase has its own brightness).
-2. Else if `override_brightness: true` AND the input_color has a stored
+2. Else if `override_brightness: true` AND the color has a stored
    brightness, push the stored value.
 3. Else: omit brightness — each target light keeps its current level.
 
@@ -187,45 +187,45 @@ in your automation on the helper's `kind` attribute before calling
 ## Blueprints and examples
 
 - **[blueprints/](blueprints/)** — one-click importable blueprints. Start with
-  "Sync Input Color to Lights" for the most common pattern.
+  "Sync Color to Lights" for the most common pattern.
 - **[examples/](examples/)** — raw YAML snippets for scripts, automations,
   and scenes. Includes a `demo_walkthrough.yaml` script that cycles a single
-  input_color through every input shape with 2-second delays so you can see
+  color through every input shape with 2-second delays so you can see
   each one render.
 
 ## Composition with scenes — the underrated pattern
 
-`input_color` composes with scenes; it doesn't compete with them. This is
+`color` composes with scenes; it doesn't compete with them. This is
 the most useful pattern in the integration and worth understanding before
 you build anything else.
 
 The integration ships a `reproduce_state` hook, which means **scenes that
-include an input_color entity snapshot its full canonical state** (kind,
+include an color entity snapshot its full canonical state** (kind,
 xy, kelvin, brightness) — and restore it on `scene.turn_on`.
 
 The composition that falls out:
 
 | Layer | Holds | Mutable | Example |
 |---|---|---|---|
-| `input_color` helper | A named color you can edit | Yes | `input_color.favorite_blue` |
+| `color` helper | A named color you can edit | Yes | `color.favorite_blue` |
 | `scene` | A frozen moment, including the helper's value | No (until you re-create it) | `scene.movie_night` |
 
 A user-facing workflow that becomes natural:
 
 1. **Edit the favorite** from a dashboard card or automation — the
-   `input_color` is the named slot. Change it whenever.
-2. **Capture a moment** with `scene.create snapshot_entities: [input_color.x, light.a, light.b]`. The scene now remembers the helper's value at capture time **and** the lights' state.
+   `color` is the named slot. Change it whenever.
+2. **Capture a moment** with `scene.create snapshot_entities: [color.x, light.a, light.b]`. The scene now remembers the helper's value at capture time **and** the lights' state.
 3. **Restore later** with `scene.turn_on` — both the helper and the lights
    snap back to what they were when you captured.
 
 This is different from a static scene because the helper between captures
 is editable: you can build a "Living Room — Evening" scene that includes
-`input_color.living_room_color`, then later edit that helper to a new
+`color.living_room_color`, then later edit that helper to a new
 favorite, then re-capture the scene to update the snapshot. The helper is
 the *named handle*; the scene is the *frozen application*.
 
 It's also the answer to "but scenes already do this" — they do, for
-literal device states. `input_color` adds a *named, reusable color value*
+literal device states. `color` adds a *named, reusable color value*
 that scenes can include alongside device states, without you having to
 hardcode hex values in the scene YAML.
 
@@ -249,12 +249,12 @@ The two most useful patterns:
 service: light.turn_on
 data:
   entity_id: light.island
-  rgb_color: "{{ state_attr('input_color.gym_work_color', 'rgb_color') | default([255, 0, 0]) }}"
+  rgb_color: "{{ state_attr('color.gym_work_color', 'rgb_color') | default([255, 0, 0]) }}"
 
 # Same but with explicit brightness for this call only — no stored state.
-service: input_color.apply_to
+service: color.apply_to
 target:
-  entity_id: input_color.gym_work_color
+  entity_id: color.gym_work_color
 data:
   lights: [light.island]
   brightness: 255          # explicit; ignores stored brightness
@@ -263,7 +263,7 @@ data:
 For exact reads (no gamut drift), use `source_hex`:
 
 ```yaml
-{{ state_attr('input_color.x', 'source_hex') or state('input_color.x') }}
+{{ state_attr('color.x', 'source_hex') or state('color.x') }}
 ```
 
 This returns the literal hex the user picked (when set via hex/rgb/hs/name),
@@ -272,7 +272,7 @@ or falls back to the gamut-mapped state for xy/kelvin inputs.
 ## Creating entries programmatically
 
 The normal install flow is the UI (Settings → Devices & services → Add
-Integration → "Input Color"). If you need to create entries from a script
+Integration → "Color"). If you need to create entries from a script
 or another integration, the ConfigEntry `data` dict shape is:
 
 ```python
@@ -289,7 +289,7 @@ or another integration, the ConfigEntry `data` dict shape is:
 Then start a config flow:
 ```python
 result = await hass.config_entries.flow.async_init(
-    "input_color",
+    "color",
     context={"source": "user"},
     data={...},  # not actually consumed at user step; flow walks steps
 )

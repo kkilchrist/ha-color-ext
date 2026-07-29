@@ -1,8 +1,8 @@
-"""The Input Color helper integration.
+"""The Color helper integration.
 
-Each config entry produces exactly one `InputColorEntity`. The entity is added
+Each config entry produces exactly one `ColorEntity`. The entity is added
 to a single shared `EntityComponent` keyed by DOMAIN so services targeting
-`input_color.*` resolve uniformly.
+`color.*` resolve uniformly.
 
 Two service entry points are exposed:
 - entity services (`set_color`, `set_brightness`, `apply_to`) registered via
@@ -42,7 +42,7 @@ from .const import (
     SERVICE_SET_BRIGHTNESS,
     SERVICE_SET_COLOR,
 )
-from .entity import InputColorEntity
+from .entity import ColorEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -95,7 +95,7 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     on the platform-side service registry, so re-entry would be safe — but
     that's not exercised in practice.
     """
-    component: EntityComponent[InputColorEntity] = EntityComponent(_LOGGER, DOMAIN, hass)
+    component: EntityComponent[ColorEntity] = EntityComponent(_LOGGER, DOMAIN, hass)
     hass.data[DOMAIN] = component
 
     # Entity-service handlers receive the full ServiceCall when registered as
@@ -106,19 +106,19 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     def _color_shape(call: ServiceCall) -> dict[str, Any]:
         return {k: v for k, v in call.data.items() if k not in _STRIP_KEYS}
 
-    async def _wrap_set_color(entity: InputColorEntity, call: ServiceCall) -> None:
+    async def _wrap_set_color(entity: ColorEntity, call: ServiceCall) -> None:
         try:
             await entity.async_set_color(**_color_shape(call))
         except ColorInputError as err:
             raise HomeAssistantError(str(err)) from err
 
-    async def _wrap_set_brightness(entity: InputColorEntity, call: ServiceCall) -> None:
+    async def _wrap_set_brightness(entity: ColorEntity, call: ServiceCall) -> None:
         await entity.async_set_brightness(call.data[FIELD_BRIGHTNESS])
 
-    async def _wrap_clear_brightness(entity: InputColorEntity, call: ServiceCall) -> None:
+    async def _wrap_clear_brightness(entity: ColorEntity, call: ServiceCall) -> None:
         await entity.async_set_brightness(None)
 
-    async def _wrap_apply_to(entity: InputColorEntity, call: ServiceCall) -> None:
+    async def _wrap_apply_to(entity: ColorEntity, call: ServiceCall) -> None:
         await entity.async_apply_to(
             call.data[FIELD_LIGHTS],
             override_brightness=call.data.get(FIELD_OVERRIDE_BRIGHTNESS, False),
@@ -139,8 +139,8 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Add one entity per config entry."""
-    component: EntityComponent[InputColorEntity] = hass.data[DOMAIN]
-    entity = InputColorEntity(entry)
+    component: EntityComponent[ColorEntity] = hass.data[DOMAIN]
+    entity = ColorEntity(entry)
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     await component.async_add_entities([entity])
     # Track the entity on the entry so unload can remove it cleanly.
@@ -149,8 +149,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    component: EntityComponent[InputColorEntity] = hass.data[DOMAIN]
-    entity: InputColorEntity | None = getattr(entry, "runtime_data", None)
+    component: EntityComponent[ColorEntity] = hass.data[DOMAIN]
+    entity: ColorEntity | None = getattr(entry, "runtime_data", None)
     if entity is None or entity.entity_id is None:
         return True
     await component.async_remove_entity(entity.entity_id)

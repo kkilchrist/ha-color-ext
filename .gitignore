@@ -29,4 +29,5 @@ env/
 .DS_Store
 
 # Release artifacts
-input_color.zip
+color.zip
+_announcements/

@@ -1,4 +1,4 @@
-"""Color normalization for the Input Color helper.
+"""Color normalization for the Color helper.
 
 The helper stores a canonical `(xy, kind, kelvin?)` tuple internally and derives
 every attribute (hex/rgb/hs/kelvin) from it. This module dispatches any

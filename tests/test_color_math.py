@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from custom_components.input_color.color_math import (
+from custom_components.color.color_math import (
     ColorInputError,
     derive_hex,
     derive_hs,
@@ -16,7 +16,7 @@ from custom_components.input_color.color_math import (
     derive_rgb,
     normalize,
 )
-from custom_components.input_color.const import (
+from custom_components.color.const import (
     FIELD_COLOR_NAME,
     FIELD_HEX,
     FIELD_HS,

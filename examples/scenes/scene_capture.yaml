@@ -1,5 +1,5 @@
 # Scene capture works because we ship reproduce_state.py — `scene.create`
-# snapshots the input_color's full canonical state (kind + xy + kelvin +
+# snapshots the color's full canonical state (kind + xy + kelvin +
 # brightness), and `scene.apply` (or selecting the scene) restores it.
 #
 # This is how you preserve "the way the room looked at 7pm" including the
@@ -14,14 +14,14 @@ script:
         data:
           scene_id: living_room_now
           snapshot_entities:
-            - input_color.living_room_color
+            - color.living_room_color
             - light.living_room_lamp
             - light.living_room_strip
 
 # 2) Restore later with a normal scene.apply call:
 automation:
   - alias: Restore living room at 7pm
-    description: At 19:00, apply the captured "now" scene including input_color state.
+    description: At 19:00, apply the captured "now" scene including color state.
     trigger:
       - platform: time
         at: "19:00:00"

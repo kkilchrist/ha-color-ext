@@ -7,13 +7,13 @@ from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant, State
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.input_color.const import (
+from custom_components.color.const import (
     CONF_INITIAL_COLOR,
     CONF_INITIAL_MODE,
     DOMAIN,
     MODE_CHROMATIC,
 )
-from custom_components.input_color.reproduce_state import async_reproduce_states
+from custom_components.color.reproduce_state import async_reproduce_states
 
 
 async def _setup_entity(hass: HomeAssistant) -> str:

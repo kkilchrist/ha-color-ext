@@ -19,7 +19,7 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          manifest_version=$(python -c "import json; print(json.load(open('custom_components/input_color/manifest.json'))['version'])")
+          manifest_version=$(python -c "import json; print(json.load(open('custom_components/color/manifest.json'))['version'])")
           tag_version="${TAG#v}"
           if [ "$manifest_version" != "$tag_version" ]; then
             echo "Manifest version ($manifest_version) does not match tag ($tag_version)"
@@ -28,11 +28,11 @@ jobs:
 
       - name: Build zip
         run: |
-          cd custom_components/input_color
-          zip -r ../../input_color.zip .
+          cd custom_components/color
+          zip -r ../../color.zip .
 
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          files: input_color.zip
+          files: color.zip
           generate_release_notes: true

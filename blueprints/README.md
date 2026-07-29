@@ -1,13 +1,13 @@
 # Blueprints
 
 One-click-importable Home Assistant blueprints that wrap common
-`input_color` patterns.
+`color` patterns.
 
 ## Available
 
 | Blueprint | What it does | Import URL |
 |---|---|---|
-| [Sync Input Color to Lights](automation/input_color_sync_to_lights.yaml) | Whenever an input_color changes, push the new value to one or more lights via `apply_to`. The most common pattern. | `https://github.com/kkilchrist/ha-color-ext/blob/main/blueprints/automation/input_color_sync_to_lights.yaml` |
+| [Sync Color to Lights](automation/color_sync_to_lights.yaml) | Whenever an color changes, push the new value to one or more lights via `apply_to`. The most common pattern. | `https://github.com/kkilchrist/ha-color-ext/blob/main/blueprints/automation/color_sync_to_lights.yaml` |
 
 ## How to import
 
@@ -17,7 +17,7 @@ One-click-importable Home Assistant blueprints that wrap common
 4. Click **Preview Blueprint**, then **Import Blueprint**
 5. Use the blueprint via **Create Automation → Use Blueprint**
 
-Each blueprint exposes its configuration inputs (which input_color, which
+Each blueprint exposes its configuration inputs (which color, which
 lights, etc.) in the standard HA UI — no YAML editing required.
 
 ## Want more?
