@@ -117,7 +117,7 @@ deserialization). No custom `Store`.
 
 1. **home-assistant/core** — the `input_color` integration. The HACS implementation is
    already close to core shape: fully async, typed, no blocking I/O, no third-party
-   deps, config flow + options flow, `strings.json`, 48 tests on the HA test harness
+   deps, config flow + options flow, `strings.json`, 53 tests on the HA test harness
    covering color math, services, restore, and scene reproduction. Known port work:
    manifest cleanup, `icons.json`, service-schema validation via `vol.Exclusive` with
    `ServiceValidationError` translation keys, full config-flow error/abort coverage,
