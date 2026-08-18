@@ -2,6 +2,34 @@
 
 ## 0.2.0
 
+### Breaking change: the domain is now `color`, not `input_color`
+
+Home Assistant reserves the `input_*` prefix for its original YAML-era helpers,
+so getting this into core meant renaming the domain. That rename is in this
+release, and it is not automatic:
+
+- entity IDs change from `input_color.gym_work_color` to `color.gym_work_color`;
+- **your helpers have to be recreated.** A config entry belongs to a domain, so
+  there is no in-place migration path. Note down each helper's name, icon and
+  color before upgrading, then add them again under Settings > Devices &
+  services > Helpers > Color;
+- every reference has to be updated: automations, scripts, scene definitions,
+  dashboard cards, and blueprints. Search your config for `input_color.` and
+  for the `input_color.` action names (`input_color.set_color` becomes
+  `color.set_color`, and so on);
+- after upgrading, check that `custom_components/input_color/` is gone. If HACS
+  left it behind, delete it and restart, or Home Assistant will keep loading the
+  old integration alongside the new one;
+- delete the leftover `input_color.*` entities under Settings > Devices &
+  services > Entities, filtering for unavailable ones. Because of the bug fixed
+  below, any helper you deleted under 0.1.x also left an orphan there.
+
+If you would rather not do this yet, staying on 0.1.0 is fine. The domain in
+0.2.0 matches what is proposed for core, so migrating once now means no second
+rename if the core PR lands.
+
+### Synced with the core proposal
+
 Sync with the version proposed for Home Assistant core
 ([core#177605](https://github.com/home-assistant/core/pull/177605)), plus the
 lifecycle fixes for the bugs reported on the forum thread.
