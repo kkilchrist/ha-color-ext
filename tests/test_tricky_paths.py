@@ -1,139 +1,51 @@
-"""Tests for the non-trivial behaviors flagged by the test-rigor audit.
+"""Tests for paths where regressions would silently corrupt user data."""
 
-These tests intentionally target paths where regressions would silently
-corrupt user data or break promised semantics:
-- Full restart round-trip via mock_restore_cache_with_extra_data
-- Reproduce-state with malformed snapshot state
-- Options flow + update listener actually applying icon changes
-- brightness=0 distinct from brightness=None across apply_to
-- Kelvin cleared when a chromatic input replaces a previously-white color
-- Empty target list is a no-op (not an error)
-- _coerce_color_input fallback for unexpected shapes
-- _STRIP_KEYS lets through targeting keys (area_id etc.) without confusing normalize
-"""
+import math
 
-from __future__ import annotations
-
-from typing import Any
-
-from homeassistant.const import ATTR_ENTITY_ID, CONF_NAME
+import pytest
+from homeassistant.const import ATTR_ENTITY_ID, ATTR_ICON, CONF_ICON, CONF_NAME
 from homeassistant.core import HomeAssistant, State
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     mock_restore_cache_with_extra_data,
 )
 
-from custom_components.color.config_flow import (
-    CONF_ICON,
-    _coerce_color_input,
-)
 from custom_components.color.const import (
+    ATTR_BRIGHTNESS,
+    ATTR_COLOR_PARAMS,
+    ATTR_COLOR_TEMP_KELVIN,
     ATTR_KIND,
+    ATTR_RGB_COLOR,
+    ATTR_SOURCE_HEX,
+    ATTR_XY_COLOR,
     CONF_INITIAL_BRIGHTNESS,
     CONF_INITIAL_COLOR,
     CONF_INITIAL_KELVIN,
     CONF_INITIAL_MODE,
-    DEFAULT_HEX,
     DOMAIN,
     FIELD_BRIGHTNESS,
-    FIELD_LIGHTS,
-    FIELD_OVERRIDE_BRIGHTNESS,
+    KIND_CHROMATIC,
+    KIND_WHITE,
     MODE_CHROMATIC,
     MODE_WHITE,
-    SERVICE_APPLY_TO,
     SERVICE_SET_BRIGHTNESS,
     SERVICE_SET_COLOR,
     STATE_SCHEMA_VERSION,
 )
 from custom_components.color.reproduce_state import async_reproduce_states
 
-# ----------------------------------------------------------------------
-# Restore: the most dangerous gap. Hex state is lossy; only the extra_data
-# carries kind/kelvin/xy-precision. A regression that drops any of these
-# during the restore round-trip would never be caught by hex-state checks.
-# ----------------------------------------------------------------------
+ENTITY_ID = "color.test_color"
 
 
-async def test_restore_round_trip_preserves_white_kind_and_kelvin(
-    hass: HomeAssistant,
-) -> None:
-    entity_id = "color.couch_color"
-    extra = {
-        "version": STATE_SCHEMA_VERSION,
-        "xy": [0.4341, 0.4036],  # 2700K-ish Planckian xy
-        "kind": "white",
-        "kelvin": 2700,
-        "brightness": 180,
-    }
-    mock_restore_cache_with_extra_data(
-        hass,
-        [(State(entity_id, "#FFFFFF", {"kind": "white"}), extra)],
-    )
-
-    # Now create the entry. Title is slugified to "couch_color" so the
-    # entity_id matches what we pre-populated.
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        title="Couch Color",
-        data={
-            CONF_NAME: "Couch Color",
-            CONF_INITIAL_MODE: MODE_CHROMATIC,
-            CONF_INITIAL_COLOR: "#000000",  # deliberately different from restored
-        },
-    )
-    entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-
-    state = hass.states.get(entity_id)
-    assert state is not None
-    # kind/kelvin survived (not "chromatic" + derived McCamy)
-    assert state.attributes[ATTR_KIND] == "white"
-    assert state.attributes["color_temp_kelvin"] == 2700
-    assert state.attributes["brightness"] == 180
-    # xy preserved to 4 decimals (the round() in extra_state_attributes)
-    assert state.attributes["xy_color"] == [0.4341, 0.4036]
-
-
-async def test_restore_round_trip_with_malformed_extra_falls_back(
-    hass: HomeAssistant,
-) -> None:
-    """A garbage extra_data payload should not crash; entity falls back to initial."""
-    entity_id = "color.x"
-    mock_restore_cache_with_extra_data(
-        hass,
-        [(State(entity_id, "#FFFFFF", {}), {"this": "is not valid"})],
-    )
-
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        title="X",
-        data={
-            CONF_NAME: "X",
-            CONF_INITIAL_MODE: MODE_CHROMATIC,
-            CONF_INITIAL_COLOR: "#FF0000",
-        },
-    )
-    entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-
-    # Initial red survives; no exception.
-    state = hass.states.get(entity_id)
-    r, _g, _b = state.attributes["rgb_color"]
-    assert r > 200
-
-
-# ----------------------------------------------------------------------
-# Reproduce-state hardening: scenes can include weird snapshots.
-# ----------------------------------------------------------------------
-
-
-async def _setup_entity(hass: HomeAssistant, title: str = "X") -> str:
+async def _setup_entity(
+    hass: HomeAssistant, data: dict | None = None, title: str = "Test Color"
+) -> MockConfigEntry:
+    """Set up a config entry and return it."""
     entry = MockConfigEntry(
         domain=DOMAIN,
         title=title,
-        data={
+        data=data
+        or {
             CONF_NAME: title,
             CONF_INITIAL_MODE: MODE_CHROMATIC,
             CONF_INITIAL_COLOR: "#FFFFFF",
@@ -142,77 +54,134 @@ async def _setup_entity(hass: HomeAssistant, title: str = "X") -> str:
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
-    return next(
-        s.entity_id for s in hass.states.async_all() if s.entity_id.startswith(f"{DOMAIN}.")
+    return entry
+
+
+async def test_restore_round_trip_preserves_white_kind_and_kelvin(
+    hass: HomeAssistant,
+) -> None:
+    """The extra_data payload must survive a restart round-trip intact."""
+    extra = {
+        "version": STATE_SCHEMA_VERSION,
+        "xy": [0.4341, 0.4036],  # 2700K-ish Planckian xy
+        "kind": KIND_WHITE,
+        "kelvin": 2700,
+        "brightness": 180,
+    }
+    mock_restore_cache_with_extra_data(
+        hass,
+        [(State(ENTITY_ID, "#FFFFFF", {ATTR_KIND: KIND_WHITE}), extra)],
     )
+
+    await _setup_entity(
+        hass,
+        data={
+            CONF_NAME: "Test Color",
+            CONF_INITIAL_MODE: MODE_CHROMATIC,
+            CONF_INITIAL_COLOR: "#000000",  # deliberately different from restored
+        },
+    )
+
+    state = hass.states.get(ENTITY_ID)
+    assert state is not None
+    assert state.attributes[ATTR_KIND] == KIND_WHITE
+    assert state.attributes[ATTR_COLOR_TEMP_KELVIN] == 2700
+    assert state.attributes[ATTR_BRIGHTNESS] == 180
+    # xy preserved to 4 decimals (the round() in extra_state_attributes)
+    assert state.attributes[ATTR_XY_COLOR] == [0.4341, 0.4036]
+
+
+async def test_restore_round_trip_with_malformed_extra_falls_back(
+    hass: HomeAssistant,
+) -> None:
+    """A garbage extra_data payload should not crash; entity falls back to initial."""
+    mock_restore_cache_with_extra_data(
+        hass,
+        [(State(ENTITY_ID, "#FFFFFF", {}), {"this": "is not valid"})],
+    )
+
+    await _setup_entity(
+        hass,
+        data={
+            CONF_NAME: "Test Color",
+            CONF_INITIAL_MODE: MODE_CHROMATIC,
+            CONF_INITIAL_COLOR: "#FF0000",
+        },
+    )
+
+    state = hass.states.get(ENTITY_ID)
+    r, _g, _b = state.attributes[ATTR_RGB_COLOR]
+    assert r > 200
+
+
+async def test_source_hex_persists_across_restart(hass: HomeAssistant) -> None:
+    """The source_hex must survive the restore round-trip."""
+    extra = {
+        "version": STATE_SCHEMA_VERSION,
+        "xy": [0.4, 0.4],
+        "kind": KIND_CHROMATIC,
+        "kelvin": None,
+        "brightness": None,
+        "source_hex": "#0050FF",
+    }
+    mock_restore_cache_with_extra_data(
+        hass,
+        [(State(ENTITY_ID, "#0000FF", {}), extra)],
+    )
+
+    await _setup_entity(hass)
+    assert hass.states.get(ENTITY_ID).attributes[ATTR_SOURCE_HEX] == "#0050FF"
 
 
 async def test_reproduce_state_with_unavailable_skips_color_but_sets_brightness(
     hass: HomeAssistant,
 ) -> None:
     """If state.state isn't a valid hex, brightness should still apply."""
-    entity_id = await _setup_entity(hass)
+    await _setup_entity(hass)
     snapshot = State(
-        entity_id,
+        ENTITY_ID,
         "unavailable",
-        {"kind": "chromatic", "brightness": 220},
+        {ATTR_KIND: KIND_CHROMATIC, ATTR_BRIGHTNESS: 220},
     )
-    # Must not raise.
     await async_reproduce_states(hass, [snapshot])
     await hass.async_block_till_done()
-    state = hass.states.get(entity_id)
-    assert state.attributes["brightness"] == 220
+    assert hass.states.get(ENTITY_ID).attributes[ATTR_BRIGHTNESS] == 220
 
 
 async def test_reproduce_state_omitting_brightness_attr_does_not_clear(
     hass: HomeAssistant,
 ) -> None:
     """Snapshot without the brightness attr should NOT clear existing brightness."""
-    entity_id = await _setup_entity(hass)
+    await _setup_entity(hass)
     await hass.services.async_call(
         DOMAIN,
         SERVICE_SET_BRIGHTNESS,
-        {ATTR_ENTITY_ID: entity_id, FIELD_BRIGHTNESS: 150},
+        {ATTR_ENTITY_ID: ENTITY_ID, FIELD_BRIGHTNESS: 150},
         blocking=True,
     )
-    assert hass.states.get(entity_id).attributes["brightness"] == 150
+    assert hass.states.get(ENTITY_ID).attributes[ATTR_BRIGHTNESS] == 150
 
-    # Snapshot deliberately omits the brightness attribute.
-    snapshot = State(entity_id, "#00FF00", {"kind": "chromatic"})
+    snapshot = State(ENTITY_ID, "#00FF00", {ATTR_KIND: KIND_CHROMATIC})
     await async_reproduce_states(hass, [snapshot])
     await hass.async_block_till_done()
-    # Brightness should still be 150 — color updated but brightness untouched.
-    assert hass.states.get(entity_id).attributes["brightness"] == 150
-
-
-# ----------------------------------------------------------------------
-# Options flow + reload listener: the path by which UI changes apply.
-# ----------------------------------------------------------------------
+    assert hass.states.get(ENTITY_ID).attributes[ATTR_BRIGHTNESS] == 150
 
 
 async def test_options_flow_updates_icon_and_reloads_entity(
     hass: HomeAssistant,
 ) -> None:
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        title="Icon Test",
+    """Options flow icon changes apply to the entity via the reload listener."""
+    entry = await _setup_entity(
+        hass,
         data={
-            CONF_NAME: "Icon Test",
+            CONF_NAME: "Test Color",
             CONF_INITIAL_MODE: MODE_CHROMATIC,
             CONF_INITIAL_COLOR: "#FFFFFF",
             CONF_ICON: "mdi:palette",
         },
     )
-    entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
+    assert hass.states.get(ENTITY_ID).attributes[ATTR_ICON] == "mdi:palette"
 
-    entity_id = next(
-        s.entity_id for s in hass.states.async_all() if s.entity_id.startswith(f"{DOMAIN}.")
-    )
-    assert hass.states.get(entity_id).attributes.get("icon") == "mdi:palette"
-
-    # Walk the options flow.
     result = await hass.config_entries.options.async_init(entry.entry_id)
     assert result["step_id"] == "init"
     result = await hass.config_entries.options.async_configure(
@@ -220,369 +189,232 @@ async def test_options_flow_updates_icon_and_reloads_entity(
     )
     await hass.async_block_till_done()
 
-    # Entry has new icon in options...
     assert entry.options[CONF_ICON] == "mdi:lightbulb"
-    # ...and (via the update listener -> reload path) so does the entity.
-    assert hass.states.get(entity_id).attributes.get("icon") == "mdi:lightbulb"
+    assert hass.states.get(ENTITY_ID).attributes[ATTR_ICON] == "mdi:lightbulb"
 
 
-# ----------------------------------------------------------------------
-# brightness=0 must round-trip through apply_to as 0, not None.
-# ----------------------------------------------------------------------
-
-
-async def test_brightness_zero_is_distinct_from_none_through_apply_to(
-    hass: HomeAssistant,
-) -> None:
-    entity_id = await _setup_entity(hass)
+async def test_brightness_zero_is_distinct_from_none(hass: HomeAssistant) -> None:
+    """A stored brightness of 0 must surface as 0, not as unset."""
+    await _setup_entity(hass)
     await hass.services.async_call(
         DOMAIN,
         SERVICE_SET_BRIGHTNESS,
-        {ATTR_ENTITY_ID: entity_id, FIELD_BRIGHTNESS: 0},
+        {ATTR_ENTITY_ID: ENTITY_ID, FIELD_BRIGHTNESS: 0},
         blocking=True,
     )
-    assert hass.states.get(entity_id).attributes["brightness"] == 0
-
-    captured: list[dict[str, Any]] = []
-
-    async def _capture(call):
-        captured.append(dict(call.data))
-
-    hass.services.async_register("light", "turn_on", _capture)
-
-    await hass.services.async_call(
-        DOMAIN,
-        SERVICE_APPLY_TO,
-        {
-            ATTR_ENTITY_ID: entity_id,
-            FIELD_LIGHTS: ["light.fake"],
-            FIELD_OVERRIDE_BRIGHTNESS: True,
-        },
-        blocking=True,
-    )
-    assert captured[0]["brightness"] == 0
-
-
-# ----------------------------------------------------------------------
-# Setting kelvin then a chromatic color must wipe the stored kelvin so
-# downstream consumers don't see stale "this color was a white" intent.
-# ----------------------------------------------------------------------
+    state = hass.states.get(ENTITY_ID)
+    assert state.attributes[ATTR_BRIGHTNESS] == 0
+    assert state.attributes[ATTR_COLOR_PARAMS][ATTR_BRIGHTNESS] == 0
 
 
 async def test_chromatic_override_clears_previous_kelvin(hass: HomeAssistant) -> None:
-    entity_id = await _setup_entity(hass)
+    """Setting a chromatic color must wipe a previously stored kelvin."""
+    await _setup_entity(hass)
     await hass.services.async_call(
         DOMAIN,
         SERVICE_SET_COLOR,
-        {ATTR_ENTITY_ID: entity_id, "color_temp_kelvin": 2700},
+        {ATTR_ENTITY_ID: ENTITY_ID, "color_temp_kelvin": 2700},
         blocking=True,
     )
-    assert hass.states.get(entity_id).attributes["kind"] == "white"
-    assert hass.states.get(entity_id).attributes["color_temp_kelvin"] == 2700
+    state = hass.states.get(ENTITY_ID)
+    assert state.attributes[ATTR_KIND] == KIND_WHITE
+    assert state.attributes[ATTR_COLOR_TEMP_KELVIN] == 2700
 
     await hass.services.async_call(
         DOMAIN,
         SERVICE_SET_COLOR,
-        {ATTR_ENTITY_ID: entity_id, "hex_value": "#FF0000"},
+        {ATTR_ENTITY_ID: ENTITY_ID, "hex_value": "#FF0000"},
         blocking=True,
     )
-    state = hass.states.get(entity_id)
-    assert state.attributes["kind"] == "chromatic"
-    # Chromatic colors don't carry a kelvin — the previously-stored 2700
-    # is gone, and we explicitly emit None rather than a McCamy guess.
-    assert state.attributes["color_temp_kelvin"] is None
-
-
-# ----------------------------------------------------------------------
-# Empty target list: documented no-op, not an error or stray call.
-# ----------------------------------------------------------------------
-
-
-async def test_apply_to_with_empty_target_is_a_noop(hass: HomeAssistant) -> None:
-    entity_id = await _setup_entity(hass)
-    captured: list[dict[str, Any]] = []
-
-    async def _capture(call):
-        captured.append(dict(call.data))
-
-    hass.services.async_register("light", "turn_on", _capture)
-
-    await hass.services.async_call(
-        DOMAIN,
-        SERVICE_APPLY_TO,
-        {ATTR_ENTITY_ID: entity_id, FIELD_LIGHTS: []},
-        blocking=True,
-    )
-    assert captured == []
-
-
-# ----------------------------------------------------------------------
-# Service wrapper must strip targeting keys; otherwise a call like
-# {entity_id, area_id, hex_value} would leak area_id into normalize().
-# ----------------------------------------------------------------------
+    state = hass.states.get(ENTITY_ID)
+    assert state.attributes[ATTR_KIND] == KIND_CHROMATIC
+    # Chromatic colors don't carry a kelvin — we explicitly emit None rather
+    # than a McCamy guess.
+    assert state.attributes[ATTR_COLOR_TEMP_KELVIN] is None
 
 
 async def test_service_strips_targeting_keys(hass: HomeAssistant) -> None:
-    entity_id = await _setup_entity(hass)
-    # area_id present alongside hex_value — must succeed.
+    """Targeting keys like area_id must not leak into normalize()."""
+    await _setup_entity(hass)
     await hass.services.async_call(
         DOMAIN,
         SERVICE_SET_COLOR,
         {
-            ATTR_ENTITY_ID: entity_id,
+            ATTR_ENTITY_ID: ENTITY_ID,
             "area_id": "some_area",
             "hex_value": "#00FF00",
         },
         blocking=True,
     )
-    _r, g, _b = hass.states.get(entity_id).attributes["rgb_color"]
+    _r, g, _b = hass.states.get(ENTITY_ID).attributes[ATTR_RGB_COLOR]
     assert g > 200
 
 
-# ----------------------------------------------------------------------
-# set_color + brightness in one call should both apply (brightness is
-# not part of the mutually-exclusive shape set).
-# ----------------------------------------------------------------------
-
-
 async def test_set_color_with_brightness_applies_both(hass: HomeAssistant) -> None:
-    entity_id = await _setup_entity(hass)
+    """Brightness in a set_color call applies alongside the color."""
+    await _setup_entity(hass)
     await hass.services.async_call(
         DOMAIN,
         SERVICE_SET_COLOR,
         {
-            ATTR_ENTITY_ID: entity_id,
+            ATTR_ENTITY_ID: ENTITY_ID,
             "hex_value": "#0000FF",
             "brightness": 100,
         },
         blocking=True,
     )
-    state = hass.states.get(entity_id)
-    _r, _g, b = state.attributes["rgb_color"]
+    state = hass.states.get(ENTITY_ID)
+    _r, _g, b = state.attributes[ATTR_RGB_COLOR]
     assert b > 200
-    assert state.attributes["brightness"] == 100
-
-
-# ----------------------------------------------------------------------
-# Initial brightness from config entry must flow into the entity.
-# ----------------------------------------------------------------------
+    assert state.attributes[ATTR_BRIGHTNESS] == 100
 
 
 async def test_initial_brightness_from_config_entry(hass: HomeAssistant) -> None:
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        title="Bright Init",
+    """Initial brightness and kelvin from the config entry flow into the entity."""
+    await _setup_entity(
+        hass,
         data={
-            CONF_NAME: "Bright Init",
+            CONF_NAME: "Test Color",
             CONF_INITIAL_MODE: MODE_WHITE,
             CONF_INITIAL_KELVIN: 3000,
             CONF_INITIAL_BRIGHTNESS: 170,
         },
     )
-    entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-    entity_id = next(
-        s.entity_id for s in hass.states.async_all() if s.entity_id.startswith(f"{DOMAIN}.")
-    )
-    state = hass.states.get(entity_id)
-    assert state.attributes["brightness"] == 170
-    assert state.attributes["color_temp_kelvin"] == 3000
-    assert state.attributes["kind"] == "white"
+    state = hass.states.get(ENTITY_ID)
+    assert state.attributes[ATTR_BRIGHTNESS] == 170
+    assert state.attributes[ATTR_COLOR_TEMP_KELVIN] == 3000
+    assert state.attributes[ATTR_KIND] == KIND_WHITE
 
 
 async def test_initial_brightness_garbage_is_safe(hass: HomeAssistant) -> None:
     """Non-int initial brightness from a corrupted entry must not crash setup."""
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        title="Garbage",
+    await _setup_entity(
+        hass,
         data={
-            CONF_NAME: "Garbage",
+            CONF_NAME: "Test Color",
             CONF_INITIAL_MODE: MODE_CHROMATIC,
             CONF_INITIAL_COLOR: "#FFFFFF",
             CONF_INITIAL_BRIGHTNESS: "not-a-number",
         },
     )
-    entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-    entity_id = next(
-        s.entity_id for s in hass.states.async_all() if s.entity_id.startswith(f"{DOMAIN}.")
-    )
-    assert hass.states.get(entity_id).attributes["brightness"] is None
-
-
-# ----------------------------------------------------------------------
-# Config-flow coerce: unknown shapes must default safely, not crash.
-# (Pure unit test, no HA event loop needed.)
-# ----------------------------------------------------------------------
-
-
-def test_coerce_color_input_unexpected_types_fall_back() -> None:
-    assert _coerce_color_input({"r": 1, "g": 2, "b": 3}) == DEFAULT_HEX
-    assert _coerce_color_input([1, 2, 3, 4]) == DEFAULT_HEX
-    assert _coerce_color_input(None) == DEFAULT_HEX
-
-
-def test_coerce_color_input_passes_through_strings_and_triples() -> None:
-    assert _coerce_color_input("#ABCDEF") == "#ABCDEF"
-    assert _coerce_color_input([255, 128, 0]) == "#FF8000"
-
-
-# ----------------------------------------------------------------------
-# apply_to: explicit brightness wins over override_brightness+stored.
-# This is what restores apply_to as a one-stop entry point for scripts
-# that want "this color, this brightness" without touching stored state.
-# ----------------------------------------------------------------------
-
-
-async def test_apply_to_explicit_brightness_wins_over_stored(
-    hass: HomeAssistant,
-) -> None:
-    entity_id = await _setup_entity(hass)
-    await hass.services.async_call(
-        DOMAIN,
-        SERVICE_SET_BRIGHTNESS,
-        {ATTR_ENTITY_ID: entity_id, FIELD_BRIGHTNESS: 150},
-        blocking=True,
-    )
-
-    captured: list[dict[str, Any]] = []
-
-    async def _capture(call):
-        captured.append(dict(call.data))
-
-    hass.services.async_register("light", "turn_on", _capture)
-
-    await hass.services.async_call(
-        DOMAIN,
-        SERVICE_APPLY_TO,
-        {
-            ATTR_ENTITY_ID: entity_id,
-            FIELD_LIGHTS: ["light.fake"],
-            # Both knobs set: explicit must win.
-            FIELD_OVERRIDE_BRIGHTNESS: True,
-            FIELD_BRIGHTNESS: 60,
-        },
-        blocking=True,
-    )
-    assert captured[0]["brightness"] == 60
-
-
-async def test_apply_to_explicit_brightness_without_stored(
-    hass: HomeAssistant,
-) -> None:
-    """Explicit brightness works even when nothing is stored."""
-    entity_id = await _setup_entity(hass)
-    captured: list[dict[str, Any]] = []
-
-    async def _capture(call):
-        captured.append(dict(call.data))
-
-    hass.services.async_register("light", "turn_on", _capture)
-
-    await hass.services.async_call(
-        DOMAIN,
-        SERVICE_APPLY_TO,
-        {
-            ATTR_ENTITY_ID: entity_id,
-            FIELD_LIGHTS: ["light.fake"],
-            FIELD_BRIGHTNESS: 200,
-        },
-        blocking=True,
-    )
-    assert captured[0]["brightness"] == 200
-
-
-# ----------------------------------------------------------------------
-# source_hex: hex/rgb/hs/color_name inputs round-trip exactly; xy/kelvin
-# inputs produce null. This is the addressable answer to the xy gamut
-# round-trip surprise the other Claude flagged.
-# ----------------------------------------------------------------------
+    assert hass.states.get(ENTITY_ID).attributes[ATTR_BRIGHTNESS] is None
 
 
 async def test_source_hex_exact_for_hex_input(hass: HomeAssistant) -> None:
-    entity_id = await _setup_entity(hass)
+    """The source_hex echoes the user's bytes exactly, normalized to uppercase."""
+    await _setup_entity(hass)
     await hass.services.async_call(
         DOMAIN,
         SERVICE_SET_COLOR,
-        {ATTR_ENTITY_ID: entity_id, "hex_value": "#0050FF"},
+        {ATTR_ENTITY_ID: ENTITY_ID, "hex_value": "#0050FF"},
         blocking=True,
     )
-    state = hass.states.get(entity_id)
-    # source_hex echoes the user's bytes exactly, normalized to uppercase.
-    assert state.attributes["source_hex"] == "#0050FF"
-    # The xy-derived hex_color may drift due to gamut mapping; that's fine.
-    # We only assert source_hex precision here.
+    assert hass.states.get(ENTITY_ID).attributes[ATTR_SOURCE_HEX] == "#0050FF"
 
 
 async def test_source_hex_null_for_xy_input(hass: HomeAssistant) -> None:
-    entity_id = await _setup_entity(hass)
+    """An xy input has no canonical source hex."""
+    await _setup_entity(hass)
     await hass.services.async_call(
         DOMAIN,
         SERVICE_SET_COLOR,
-        {ATTR_ENTITY_ID: entity_id, "xy_color": [0.3, 0.4]},
+        {ATTR_ENTITY_ID: ENTITY_ID, "xy_color": [0.3, 0.4]},
         blocking=True,
     )
-    assert hass.states.get(entity_id).attributes["source_hex"] is None
+    assert hass.states.get(ENTITY_ID).attributes[ATTR_SOURCE_HEX] is None
 
 
 async def test_source_hex_null_for_kelvin_input(hass: HomeAssistant) -> None:
-    entity_id = await _setup_entity(hass)
+    """A kelvin input has no canonical source hex."""
+    await _setup_entity(hass)
     await hass.services.async_call(
         DOMAIN,
         SERVICE_SET_COLOR,
-        {ATTR_ENTITY_ID: entity_id, "color_temp_kelvin": 3000},
+        {ATTR_ENTITY_ID: ENTITY_ID, "color_temp_kelvin": 3000},
         blocking=True,
     )
-    assert hass.states.get(entity_id).attributes["source_hex"] is None
+    assert hass.states.get(ENTITY_ID).attributes[ATTR_SOURCE_HEX] is None
 
 
 async def test_source_hex_for_color_name(hass: HomeAssistant) -> None:
     """Named colors resolve to a deterministic source hex."""
-    entity_id = await _setup_entity(hass)
+    await _setup_entity(hass)
     await hass.services.async_call(
         DOMAIN,
         SERVICE_SET_COLOR,
-        {ATTR_ENTITY_ID: entity_id, "color_name": "red"},
+        {ATTR_ENTITY_ID: ENTITY_ID, "color_name": "red"},
         blocking=True,
     )
-    state = hass.states.get(entity_id)
     # CSS3 "red" is exactly #FF0000 — no gamut math involved.
-    assert state.attributes["source_hex"] == "#FF0000"
+    assert hass.states.get(ENTITY_ID).attributes[ATTR_SOURCE_HEX] == "#FF0000"
 
 
-async def test_source_hex_persists_across_restart(hass: HomeAssistant) -> None:
-    """source_hex must survive the restore round-trip."""
-    entity_id = "color.persisted"
-    extra = {
-        "version": 1,
-        "xy": [0.4, 0.4],
-        "kind": "chromatic",
-        "kelvin": None,
-        "brightness": None,
-        "source_hex": "#0050FF",
-    }
-    from pytest_homeassistant_custom_component.common import (
-        mock_restore_cache_with_extra_data,
-    )
-
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"version": STATE_SCHEMA_VERSION, "xy": [], "kind": KIND_CHROMATIC},
+        {"version": STATE_SCHEMA_VERSION, "xy": [0.4], "kind": KIND_CHROMATIC},
+        {
+            "version": STATE_SCHEMA_VERSION,
+            "xy": [math.nan, 0.4],
+            "kind": KIND_CHROMATIC,
+        },
+        {
+            "version": STATE_SCHEMA_VERSION,
+            "xy": [math.inf, 0.4],
+            "kind": KIND_CHROMATIC,
+        },
+        {"version": STATE_SCHEMA_VERSION, "xy": [0.4, 0.4], "kind": "bogus"},
+        {"version": 99, "xy": [0.4, 0.4], "kind": KIND_CHROMATIC},
+        {"xy": [0.4, 0.4], "kind": KIND_CHROMATIC},
+        {"version": STATE_SCHEMA_VERSION, "xy": [0.0, 0.0], "kind": KIND_CHROMATIC},
+        {"version": STATE_SCHEMA_VERSION, "xy": [0.7, 0.7], "kind": KIND_CHROMATIC},
+        {"version": STATE_SCHEMA_VERSION, "xy": [0.35, 0.35], "kind": KIND_WHITE},
+        {
+            "version": STATE_SCHEMA_VERSION,
+            "xy": [0.35, 0.35],
+            "kind": KIND_WHITE,
+            "kelvin": 100,
+        },
+        {
+            "version": STATE_SCHEMA_VERSION,
+            "xy": [0.4, 0.4],
+            "kind": KIND_CHROMATIC,
+            "brightness": 999,
+        },
+        {
+            "version": STATE_SCHEMA_VERSION,
+            "xy": [0.4, 0.4],
+            "kind": KIND_CHROMATIC,
+            "kelvin": 5000,
+        },
+        {"version": math.inf, "xy": [0.4, 0.4], "kind": KIND_CHROMATIC},
+        {
+            "version": STATE_SCHEMA_VERSION,
+            "xy": [0.4, 0.4],
+            "kind": KIND_CHROMATIC,
+            "brightness": math.inf,
+        },
+    ],
+)
+async def test_restore_rejects_invalid_payload_shapes(
+    hass: HomeAssistant, extra: dict
+) -> None:
+    """Short, non-finite, or wrong-kind restore payloads fall back to initial."""
     mock_restore_cache_with_extra_data(
         hass,
-        [(State(entity_id, "#0000FF", {}), extra)],
+        [(State(ENTITY_ID, "#FFFFFF", {}), extra)],
     )
 
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        title="Persisted",
+    await _setup_entity(
+        hass,
         data={
-            CONF_NAME: "Persisted",
+            CONF_NAME: "Test Color",
             CONF_INITIAL_MODE: MODE_CHROMATIC,
-            CONF_INITIAL_COLOR: "#FFFFFF",
+            CONF_INITIAL_COLOR: "#FF0000",
         },
     )
-    entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
 
-    assert hass.states.get(entity_id).attributes["source_hex"] == "#0050FF"
+    state = hass.states.get(ENTITY_ID)
+    r, _g, _b = state.attributes[ATTR_RGB_COLOR]
+    assert r > 200

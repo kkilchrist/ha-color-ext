@@ -1,29 +1,23 @@
 """The Color helper integration.
 
-Each config entry produces exactly one `ColorEntity`. The entity is added
+Each config entry produces exactly one `ColorEntity`. The entities are added
 to a single shared `EntityComponent` keyed by DOMAIN so services targeting
 `color.*` resolve uniformly.
-
-Two service entry points are exposed:
-- entity services (`set_color`, `set_brightness`, `apply_to`) registered via
-  `component.async_register_entity_service` for `entity_id` targeting
-- standalone service handlers omitted; entity-service form covers all UI uses
-  and matches how `light.turn_on` / `input_text.set_value` behave.
 """
-
-from __future__ import annotations
 
 import logging
 from typing import Any
 
 import voluptuous as vol
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.entity_component import EntityComponent
+from homeassistant.helpers.service import remove_entity_service_fields
+from homeassistant.helpers.typing import ConfigType, VolDictType
+from homeassistant.util.hass_dict import HassKey
 
-from .color_math import ColorInputError
+from .color_math import COLOR_SHAPE_FIELDS, ColorInputError
 from .const import (
     DOMAIN,
     FIELD_BRIGHTNESS,
@@ -42,122 +36,146 @@ from .const import (
     SERVICE_SET_BRIGHTNESS,
     SERVICE_SET_COLOR,
 )
-from .entity import ColorEntity
+from .entity import ColorConfigEntry, ColorEntity
 
 _LOGGER = logging.getLogger(__name__)
+
+DATA_COMPONENT: HassKey[EntityComponent[ColorEntity]] = HassKey(DOMAIN)
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
-# Schemas mirror the shapes accepted by light.turn_on so users have muscle
-# memory. Mutual exclusivity is enforced inside the entity normalizer.
-_SET_COLOR_SCHEMA: dict[Any, Any] = {
-    vol.Optional(FIELD_HEX): cv.string,
-    vol.Optional(FIELD_RGB): vol.All(
-        cv.ensure_list,
-        vol.Length(min=3, max=3),
-        [vol.All(vol.Coerce(int), vol.Range(min=0, max=255))],
+def _finite_int(value: Any) -> int:
+    """Coerce to int, mapping non-finite floats to vol.Invalid, not OverflowError."""
+    try:
+        return int(value)
+    except (TypeError, ValueError, OverflowError) as err:
+        raise vol.Invalid(f"expected an integer, got {value!r}") from err
+
+
+def _safe_float(value: Any) -> float:
+    """Coerce to float, mapping overflowing ints to vol.Invalid, not OverflowError."""
+    try:
+        return float(value)
+    except (TypeError, ValueError, OverflowError) as err:
+        raise vol.Invalid(f"expected a number, got {value!r}") from err
+
+
+def _exactly_one_color_shape(data: dict[str, Any]) -> dict[str, Any]:
+    """Ensure only one of the mutually exclusive color shapes is present."""
+    present = sorted(field for field in COLOR_SHAPE_FIELDS if field in data)
+    if len(present) > 1:
+        raise vol.Invalid(f"Provide only one color input; got multiple: {present}")
+    return data
+
+
+SET_COLOR_SCHEMA = vol.All(
+    cv.make_entity_service_schema(
+        {
+            vol.Optional(FIELD_HEX): cv.string,
+            vol.Optional(FIELD_RGB): vol.All(
+                cv.ensure_list,
+                vol.Length(min=3, max=3),
+                [vol.All(_finite_int, vol.Range(min=0, max=255))],
+            ),
+            vol.Optional(FIELD_HS): vol.All(
+                cv.ensure_list,
+                vol.Length(min=2, max=2),
+                [_safe_float],
+            ),
+            vol.Optional(FIELD_XY): vol.All(
+                cv.ensure_list,
+                vol.Length(min=2, max=2),
+                [vol.All(_safe_float, vol.Range(min=0.0, max=1.0))],
+            ),
+            vol.Optional(FIELD_KELVIN): vol.All(
+                _finite_int, vol.Range(min=MIN_KELVIN, max=MAX_KELVIN)
+            ),
+            vol.Optional(FIELD_COLOR_NAME): cv.string,
+            vol.Optional(FIELD_BRIGHTNESS): vol.All(
+                _finite_int, vol.Range(min=0, max=255)
+            ),
+        }
     ),
-    vol.Optional(FIELD_HS): vol.All(
-        cv.ensure_list,
-        vol.Length(min=2, max=2),
-        [vol.Coerce(float)],
-    ),
-    vol.Optional(FIELD_XY): vol.All(
-        cv.ensure_list,
-        vol.Length(min=2, max=2),
-        [vol.All(vol.Coerce(float), vol.Range(min=0.0, max=1.0))],
-    ),
-    vol.Optional(FIELD_KELVIN): vol.All(vol.Coerce(int), vol.Range(min=MIN_KELVIN, max=MAX_KELVIN)),
-    vol.Optional(FIELD_COLOR_NAME): cv.string,
-    vol.Optional(FIELD_BRIGHTNESS): vol.All(vol.Coerce(int), vol.Range(min=0, max=255)),
+    cv.has_at_least_one_key(*COLOR_SHAPE_FIELDS),
+    _exactly_one_color_shape,
+)
+
+SET_BRIGHTNESS_SCHEMA: VolDictType = {
+    vol.Required(FIELD_BRIGHTNESS): vol.All(_finite_int, vol.Range(min=0, max=255)),
 }
 
-_SET_BRIGHTNESS_SCHEMA: dict[Any, Any] = {
-    vol.Required(FIELD_BRIGHTNESS): vol.All(vol.Coerce(int), vol.Range(min=0, max=255)),
-}
-
-_CLEAR_BRIGHTNESS_SCHEMA: dict[Any, Any] = {}
-
-_APPLY_TO_SCHEMA: dict[Any, Any] = {
+# Custom-integration extra; see SERVICE_APPLY_TO in const.py.
+APPLY_TO_SCHEMA: VolDictType = {
     vol.Required(FIELD_LIGHTS): vol.All(cv.ensure_list, [cv.entity_id]),
     vol.Optional(FIELD_OVERRIDE_BRIGHTNESS, default=False): cv.boolean,
-    # Explicit per-call brightness; wins over override_brightness+stored.
-    vol.Optional(FIELD_BRIGHTNESS): vol.All(vol.Coerce(int), vol.Range(min=0, max=255)),
+    vol.Optional(FIELD_BRIGHTNESS): vol.All(_finite_int, vol.Range(min=0, max=255)),
 }
 
 
-async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
-    """Register the entity component and entity services.
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Register the entity component and entity services."""
+    component = EntityComponent[ColorEntity](_LOGGER, DOMAIN, hass)
+    hass.data[DATA_COMPONENT] = component
+    # Config-entry-only component: EntityComponent.async_setup() never runs,
+    # so the shutdown hook must be registered explicitly.
+    component.register_shutdown()
 
-    Called once at integration load. HA guarantees a single invocation per
-    process, and `EntityComponent.async_register_entity_service` is idempotent
-    on the platform-side service registry, so re-entry would be safe — but
-    that's not exercised in practice.
-    """
-    component: EntityComponent[ColorEntity] = EntityComponent(_LOGGER, DOMAIN, hass)
-    hass.data[DOMAIN] = component
-
-    # Entity-service handlers receive the full ServiceCall when registered as
-    # a callable (not a method-name string), so we read .data ourselves and
-    # strip the entity-targeting keys that HA leaves in.
-    _STRIP_KEYS = {"entity_id", "area_id", "device_id", "floor_id", "label_id"}
-
-    def _color_shape(call: ServiceCall) -> dict[str, Any]:
-        return {k: v for k, v in call.data.items() if k not in _STRIP_KEYS}
-
-    async def _wrap_set_color(entity: ColorEntity, call: ServiceCall) -> None:
+    async def set_color(entity: ColorEntity, call: ServiceCall) -> None:
+        """Set a color from a service call."""
+        color_shape = remove_entity_service_fields(call)
         try:
-            await entity.async_set_color(**_color_shape(call))
+            await entity.async_set_color(**color_shape)
         except ColorInputError as err:
-            raise HomeAssistantError(str(err)) from err
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="invalid_color_value",
+                translation_placeholders={"error": str(err)},
+            ) from err
 
-    async def _wrap_set_brightness(entity: ColorEntity, call: ServiceCall) -> None:
-        await entity.async_set_brightness(call.data[FIELD_BRIGHTNESS])
-
-    async def _wrap_clear_brightness(entity: ColorEntity, call: ServiceCall) -> None:
+    async def clear_brightness(entity: ColorEntity, call: ServiceCall) -> None:
+        """Clear the stored brightness."""
         await entity.async_set_brightness(None)
 
-    async def _wrap_apply_to(entity: ColorEntity, call: ServiceCall) -> None:
+    component.async_register_entity_service(
+        SERVICE_SET_COLOR, SET_COLOR_SCHEMA, set_color
+    )
+    component.async_register_entity_service(
+        SERVICE_SET_BRIGHTNESS, SET_BRIGHTNESS_SCHEMA, "async_set_brightness"
+    )
+    component.async_register_entity_service(
+        SERVICE_CLEAR_BRIGHTNESS, {}, clear_brightness
+    )
+
+    async def apply_to(entity: ColorEntity, call: ServiceCall) -> None:
+        """Push this color onto the given lights."""
         await entity.async_apply_to(
             call.data[FIELD_LIGHTS],
-            override_brightness=call.data.get(FIELD_OVERRIDE_BRIGHTNESS, False),
+            override_brightness=call.data[FIELD_OVERRIDE_BRIGHTNESS],
             brightness=call.data.get(FIELD_BRIGHTNESS),
         )
 
-    component.async_register_entity_service(SERVICE_SET_COLOR, _SET_COLOR_SCHEMA, _wrap_set_color)
-    component.async_register_entity_service(
-        SERVICE_SET_BRIGHTNESS, _SET_BRIGHTNESS_SCHEMA, _wrap_set_brightness
-    )
-    component.async_register_entity_service(
-        SERVICE_CLEAR_BRIGHTNESS, _CLEAR_BRIGHTNESS_SCHEMA, _wrap_clear_brightness
-    )
-    component.async_register_entity_service(SERVICE_APPLY_TO, _APPLY_TO_SCHEMA, _wrap_apply_to)
+    component.async_register_entity_service(SERVICE_APPLY_TO, APPLY_TO_SCHEMA, apply_to)
 
     return True
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Add one entity per config entry."""
-    component: EntityComponent[ColorEntity] = hass.data[DOMAIN]
-    entity = ColorEntity(entry)
+async def async_setup_entry(hass: HomeAssistant, entry: ColorConfigEntry) -> bool:
+    """Set up the entity through a config-entry-backed platform.
+
+    Routing through EntityComponent.async_setup_entry links the entity
+    registry entry to the config entry, so registry cleanup on entry
+    removal is automatic.
+    """
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
-    await component.async_add_entities([entity])
-    # Track the entity on the entry so unload can remove it cleanly.
-    entry.runtime_data = entity
-    return True
+    return await hass.data[DATA_COMPONENT].async_setup_entry(entry)
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    component: EntityComponent[ColorEntity] = hass.data[DOMAIN]
-    entity: ColorEntity | None = getattr(entry, "runtime_data", None)
-    if entity is None or entity.entity_id is None:
-        return True
-    await component.async_remove_entity(entity.entity_id)
-    entry.runtime_data = None
-    return True
+async def async_unload_entry(hass: HomeAssistant, entry: ColorConfigEntry) -> bool:
+    """Unload the platform backing the config entry."""
+    return await hass.data[DATA_COMPONENT].async_unload_entry(entry)
 
 
-async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+async def _async_update_listener(hass: HomeAssistant, entry: ColorConfigEntry) -> None:
     """Reload the entry when options change so name/icon updates apply."""
     await hass.config_entries.async_reload(entry.entry_id)

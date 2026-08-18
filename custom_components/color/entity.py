@@ -1,13 +1,11 @@
 """Entity class for the Color helper."""
 
-from __future__ import annotations
-
 import logging
-from typing import Any
+from typing import Any, Self, override
 
 from homeassistant.components import light
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import ATTR_ENTITY_ID
+from homeassistant.const import ATTR_ENTITY_ID, CONF_ICON
 from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 
 from .color_math import (
@@ -19,6 +17,7 @@ from .color_math import (
     derive_kelvin,
     derive_rgb,
     normalize,
+    valid_xy,
 )
 from .const import (
     ATTR_BRIGHTNESS,
@@ -38,12 +37,17 @@ from .const import (
     DEFAULT_KELVIN,
     FIELD_HEX,
     FIELD_KELVIN,
+    KIND_CHROMATIC,
     KIND_WHITE,
+    MAX_KELVIN,
+    MIN_KELVIN,
     MODE_WHITE,
     STATE_SCHEMA_VERSION,
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+type ColorConfigEntry = ConfigEntry[ColorEntity]
 
 
 class _StoredColor(ExtraStoredData):
@@ -53,72 +57,96 @@ class _StoredColor(ExtraStoredData):
         self,
         canonical: CanonicalColor,
         brightness: int | None,
-        source_hex: str | None = None,
+        source_hex: str | None,
     ) -> None:
+        """Initialize stored color data."""
         self.canonical = canonical
         self.brightness = brightness
         self.source_hex = source_hex
 
+    @override
     def as_dict(self) -> dict[str, Any]:
+        """Return a dict representation of the stored color."""
         return {
+            "brightness": self.brightness,
+            "kelvin": self.canonical.kelvin,
+            "kind": self.canonical.kind,
+            "source_hex": self.source_hex,
             "version": STATE_SCHEMA_VERSION,
             "xy": list(self.canonical.xy),
-            "kind": self.canonical.kind,
-            "kelvin": self.canonical.kelvin,
-            "brightness": self.brightness,
-            "source_hex": self.source_hex,
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> _StoredColor | None:
+    def from_dict(cls, data: dict[str, Any]) -> Self | None:
+        """Create stored color data from a dict."""
         try:
-            xy = data["xy"]
-            kind = data["kind"]
-            canonical = CanonicalColor(
-                xy=(float(xy[0]), float(xy[1])),
-                kind=str(kind),
-                kelvin=int(data["kelvin"]) if data.get("kelvin") is not None else None,
-            )
+            version = int(data["version"])
+            x, y = (float(value) for value in data["xy"])
+            kind = str(data["kind"])
+            kelvin = int(data["kelvin"]) if data.get("kelvin") is not None else None
             brightness = data.get("brightness")
             if brightness is not None:
                 brightness = int(brightness)
             source_hex = data.get("source_hex")
             if source_hex is not None:
                 source_hex = str(source_hex)
-        except (KeyError, TypeError, ValueError):
+        except (KeyError, TypeError, ValueError, OverflowError):
             return None
-        return cls(canonical, brightness, source_hex)
+        if (
+            version != STATE_SCHEMA_VERSION
+            or not valid_xy(x, y)
+            or kind not in (KIND_CHROMATIC, KIND_WHITE)
+            or (
+                kind == KIND_WHITE
+                and (kelvin is None or not MIN_KELVIN <= kelvin <= MAX_KELVIN)
+            )
+            or (kind == KIND_CHROMATIC and kelvin is not None)
+            or (brightness is not None and not 0 <= brightness <= 255)
+        ):
+            return None
+        return cls(
+            CanonicalColor(xy=(x, y), kind=kind, kelvin=kelvin), brightness, source_hex
+        )
 
 
 class ColorEntity(RestoreEntity):
-    """A color value with multiple representations and an apply-to dispatcher."""
+    """Represent a stored color value with derived representations."""
 
     _attr_should_poll = False
-    _attr_has_entity_name = False
+    _attr_has_entity_name = True
+    # Derived views of the canonical value; recording them just duplicates
+    # the state string in the database.
+    _unrecorded_attributes = frozenset(
+        {
+            ATTR_COLOR_PARAMS,
+            ATTR_HEX_COLOR,
+            ATTR_HS_COLOR,
+            ATTR_RGB_COLOR,
+            ATTR_SOURCE_HEX,
+            ATTR_XY_COLOR,
+        }
+    )
 
-    def __init__(self, entry: ConfigEntry) -> None:
+    def __init__(self, entry: ColorConfigEntry) -> None:
+        """Initialize the color entity from its config entry."""
         self._entry = entry
         self._attr_unique_id = entry.entry_id
-        # Name is derived dynamically from entry.title so UI renames apply
-        # without requiring an integration reload.
-        self._canonical: CanonicalColor = self._initial_canonical(entry)
-        self._brightness: int | None = self._initial_brightness(entry)
-        self._source_hex: str | None = self._initial_source_hex(entry)
-
-    @property
-    def name(self) -> str | None:
-        return self._entry.title or self._entry.data.get("name")
-
-    @property
-    def icon(self) -> str | None:
-        return self._entry.options.get("icon") or self._entry.data.get("icon")
-
-    # ---- initialization helpers ------------------------------------------
+        # The update listener reloads the entry on rename/options change, so
+        # name and icon can be set once here.
+        self._attr_name = entry.title
+        # Options (which store None for "cleared") win over the creation icon.
+        if CONF_ICON in entry.options:
+            self._attr_icon = entry.options[CONF_ICON]
+        else:
+            self._attr_icon = entry.data.get(CONF_ICON)
+        self._canonical = self._initial_canonical(entry)
+        self._brightness = self._initial_brightness(entry)
+        self._source_hex = self._initial_source_hex(entry)
 
     @staticmethod
-    def _initial_canonical(entry: ConfigEntry) -> CanonicalColor:
-        mode = entry.data.get(CONF_INITIAL_MODE)
-        if mode == MODE_WHITE:
+    def _initial_canonical(entry: ColorConfigEntry) -> CanonicalColor:
+        """Return the initial canonical color."""
+        if entry.data.get(CONF_INITIAL_MODE) == MODE_WHITE:
             kelvin = entry.data.get(CONF_INITIAL_KELVIN, DEFAULT_KELVIN)
             try:
                 return normalize({FIELD_KELVIN: kelvin})
@@ -132,63 +160,58 @@ class ColorEntity(RestoreEntity):
             return normalize({FIELD_HEX: DEFAULT_HEX})
 
     @staticmethod
-    def _initial_source_hex(entry: ConfigEntry) -> str | None:
-        """Compute source_hex from the initial config (or None for white-init)."""
-        mode = entry.data.get(CONF_INITIAL_MODE)
-        if mode == MODE_WHITE:
+    def _initial_brightness(entry: ColorConfigEntry) -> int | None:
+        """Return the initial brightness."""
+        brightness = entry.data.get(CONF_INITIAL_BRIGHTNESS)
+        if brightness is None:
+            return None
+        try:
+            value = int(brightness)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        return max(0, min(255, value))
+
+    @staticmethod
+    def _initial_source_hex(entry: ColorConfigEntry) -> str | None:
+        """Return the source hex for the initial color, if any."""
+        if entry.data.get(CONF_INITIAL_MODE) == MODE_WHITE:
             return None
         initial = entry.data.get(CONF_INITIAL_COLOR)
         if not initial:
             return None
         return compute_source_hex({FIELD_HEX: initial})
 
-    @staticmethod
-    def _initial_brightness(entry: ConfigEntry) -> int | None:
-        b = entry.data.get(CONF_INITIAL_BRIGHTNESS)
-        if b is None:
-            return None
-        try:
-            value = int(b)
-        except (TypeError, ValueError):
-            return None
-        return max(0, min(255, value))
-
-    # ---- properties -------------------------------------------------------
-
     @property
+    @override
     def state(self) -> str:
+        """Return the state of the entity."""
         return derive_hex(self._canonical)
 
     @property
+    @override
     def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the state attributes."""
         x, y = self._canonical.xy
         r, g, b = derive_rgb(self._canonical)
-        h, s = derive_hs(self._canonical)
+        hue, sat = derive_hs(self._canonical)
         return {
-            ATTR_KIND: self._canonical.kind,
-            ATTR_XY_COLOR: [round(x, 4), round(y, 4)],
-            ATTR_RGB_COLOR: [r, g, b],
-            ATTR_HS_COLOR: [round(h, 2), round(s, 2)],
-            ATTR_COLOR_TEMP_KELVIN: derive_kelvin(self._canonical),
             ATTR_BRIGHTNESS: self._brightness,
-            ATTR_HEX_COLOR: derive_hex(self._canonical),
-            ATTR_SOURCE_HEX: self._source_hex,
             ATTR_COLOR_PARAMS: self._color_params(),
+            ATTR_COLOR_TEMP_KELVIN: derive_kelvin(self._canonical),
+            ATTR_HEX_COLOR: derive_hex(self._canonical),
+            ATTR_HS_COLOR: [round(hue, 2), round(sat, 2)],
+            ATTR_KIND: self._canonical.kind,
+            ATTR_RGB_COLOR: [r, g, b],
+            ATTR_SOURCE_HEX: self._source_hex,
+            ATTR_XY_COLOR: [round(x, 4), round(y, 4)],
         }
 
     def _color_params(self) -> dict[str, Any]:
-        """Payload splattable directly into light.turn_on.
-
-        `{"xy_color": [x, y]}` for chromatic, `{"color_temp_kelvin": k}` for
-        white, plus `"brightness"` when one is stored (matching light-profile
-        semantics, where a profile carries color and brightness together).
-        The light component converts per-target capability, so consumers
-        never branch on kind or fixture support:
-
-            data: "{{ state_attr('color.evening_amber', 'color_params') }}"
-        """
+        """Return a payload splattable directly into light.turn_on."""
         if self._canonical.kind == KIND_WHITE and self._canonical.kelvin is not None:
-            params: dict[str, Any] = {light.ATTR_COLOR_TEMP_KELVIN: self._canonical.kelvin}
+            params: dict[str, Any] = {
+                light.ATTR_COLOR_TEMP_KELVIN: self._canonical.kelvin
+            }
         else:
             x, y = self._canonical.xy
             params = {light.ATTR_XY_COLOR: [x, y]}
@@ -196,13 +219,15 @@ class ColorEntity(RestoreEntity):
             params[light.ATTR_BRIGHTNESS] = self._brightness
         return params
 
-    # ---- restore ---------------------------------------------------------
-
     @property
+    @override
     def extra_restore_state_data(self) -> ExtraStoredData | None:
+        """Return entity data to restore."""
         return _StoredColor(self._canonical, self._brightness, self._source_hex)
 
+    @override
     async def async_added_to_hass(self) -> None:
+        """Restore the stored color when the entity is added."""
         await super().async_added_to_hass()
         last_extra = await self.async_get_last_extra_data()
         if last_extra is not None:
@@ -212,32 +237,25 @@ class ColorEntity(RestoreEntity):
                 self._brightness = stored.brightness
                 self._source_hex = stored.source_hex
 
-    # ---- setters --------------------------------------------------------
-
     async def async_set_color(self, **shape: Any) -> None:
-        """Set the color from any one accepted input shape."""
-        # Defensive copy: don't mutate caller's kwargs dict.
+        """Set the color from one accepted input shape."""
         color_shape = dict(shape)
         brightness = color_shape.pop(ATTR_BRIGHTNESS, None)
         self._canonical = normalize(color_shape)
-        # source_hex tracks the user's literal input when it had a hex
-        # equivalent (hex/rgb/hs/color_name). For xy/kelvin inputs it becomes
-        # None, which is the right semantic: there's no "source hex" for
-        # those — the user picked a chromaticity or a kelvin, not a color.
         self._source_hex = compute_source_hex(color_shape)
         if brightness is not None:
             self._brightness = max(0, min(255, int(brightness)))
         self.async_write_ha_state()
 
     async def async_set_brightness(self, brightness: int | None) -> None:
-        """Set or clear the stored brightness (null clears it)."""
+        """Set or clear the stored brightness."""
         if brightness is None:
             self._brightness = None
         else:
             self._brightness = max(0, min(255, int(brightness)))
         self.async_write_ha_state()
 
-    # ---- apply dispatcher -----------------------------------------------
+    # ---- apply dispatcher (custom-integration extra) ----------------------
 
     async def async_apply_to(
         self,
@@ -247,27 +265,26 @@ class ColorEntity(RestoreEntity):
     ) -> None:
         """Apply this color to one or more lights via light.turn_on.
 
-        Sends `color_temp_kelvin` for whites and `xy_color` for chromatic.
-        HA's own light component handles per-fixture conversion to whatever
-        `supported_color_modes` the target actually advertises. We make a
-        single batched service call so HA fans out per-light failures
-        independently rather than fail-stopping on the first error.
+        Not part of the core proposal — core keeps the helper a pure value and
+        expects `color_params` to be splatted into `light.turn_on`. Kept here
+        because installations on the 0.1.x custom integration already call it.
 
-        Brightness precedence (so apply_to stays the canonical entry point
-        even when the caller wants a one-off value):
-        1. Explicit `brightness` argument wins if provided (0-255).
-        2. Else if `override_brightness=True` AND a brightness is stored on
-           this entity, push the stored value.
-        3. Else: omit brightness — each target light keeps its current level.
+        Sends `color_temp_kelvin` for whites and `xy_color` for chromatic; the
+        light component converts per fixture capability. One batched call, so
+        HA fans out per-light failures instead of fail-stopping on the first.
+
+        Brightness precedence:
+        1. Explicit `brightness` argument (0-255).
+        2. Else `override_brightness=True` and a stored brightness.
+        3. Else omit — each target keeps its current level.
         """
         if not target_entity_ids:
             return
 
-        if self._canonical.kind == KIND_WHITE and self._canonical.kelvin is not None:
-            color_data: dict[str, Any] = {light.ATTR_COLOR_TEMP_KELVIN: self._canonical.kelvin}
-        else:
-            x, y = self._canonical.xy
-            color_data = {light.ATTR_XY_COLOR: [x, y]}
+        color_data = dict(self._color_params())
+        # _color_params() carries the stored brightness; drop it unless the
+        # caller asked for it, so apply_to leaves light levels alone by default.
+        color_data.pop(light.ATTR_BRIGHTNESS, None)
 
         if brightness is not None:
             color_data[light.ATTR_BRIGHTNESS] = max(0, min(255, int(brightness)))

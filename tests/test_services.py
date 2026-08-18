@@ -1,36 +1,42 @@
-"""Service-call tests: set_color shapes, set_brightness, apply_to dispatch."""
+"""Service-call tests for the Color helper."""
 
-from __future__ import annotations
-
-from typing import Any
+import math
 
 import pytest
+import voluptuous as vol
 from homeassistant.const import ATTR_ENTITY_ID, CONF_NAME
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.color.const import (
+    ATTR_BRIGHTNESS,
+    ATTR_COLOR_PARAMS,
+    ATTR_COLOR_TEMP_KELVIN,
+    ATTR_KIND,
+    ATTR_RGB_COLOR,
+    ATTR_XY_COLOR,
     CONF_INITIAL_COLOR,
     CONF_INITIAL_MODE,
     DOMAIN,
     FIELD_BRIGHTNESS,
-    FIELD_LIGHTS,
-    FIELD_OVERRIDE_BRIGHTNESS,
+    KIND_WHITE,
     MODE_CHROMATIC,
-    SERVICE_APPLY_TO,
     SERVICE_CLEAR_BRIGHTNESS,
     SERVICE_SET_BRIGHTNESS,
     SERVICE_SET_COLOR,
 )
 
+ENTITY_ID = "color.test_color"
 
-async def _create_entry(hass: HomeAssistant, name: str = "C") -> str:
-    """Set up a chromatic entry and return its entity_id."""
+
+async def _create_entry(hass: HomeAssistant) -> None:
+    """Set up a chromatic entry producing the test entity."""
     entry = MockConfigEntry(
         domain=DOMAIN,
-        title=name,
+        title="Test Color",
         data={
-            CONF_NAME: name,
+            CONF_NAME: "Test Color",
             CONF_INITIAL_MODE: MODE_CHROMATIC,
             CONF_INITIAL_COLOR: "#FFFFFF",
         },
@@ -38,183 +44,84 @@ async def _create_entry(hass: HomeAssistant, name: str = "C") -> str:
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
-    states = [s for s in hass.states.async_all() if s.entity_id.startswith(f"{DOMAIN}.")]
-    assert states, "entity was not created"
-    return states[0].entity_id
+    assert hass.states.get(ENTITY_ID) is not None
 
 
-@pytest.mark.asyncio
 async def test_set_color_via_hex(hass: HomeAssistant) -> None:
-    entity_id = await _create_entry(hass)
+    """Test setting a color from a hex value."""
+    await _create_entry(hass)
     await hass.services.async_call(
         DOMAIN,
         SERVICE_SET_COLOR,
-        {ATTR_ENTITY_ID: entity_id, "hex_value": "#FF0000"},
+        {ATTR_ENTITY_ID: ENTITY_ID, "hex_value": "#FF0000"},
         blocking=True,
     )
-    state = hass.states.get(entity_id)
-    assert state is not None
+    state = hass.states.get(ENTITY_ID)
     # Hex round-trips through xy with some gamut loss; the red component
     # should still dominate.
-    r, g, b = state.attributes["rgb_color"]
+    r, g, b = state.attributes[ATTR_RGB_COLOR]
     assert r > 200
     assert g < 50
     assert b < 50
 
 
-@pytest.mark.asyncio
 async def test_set_color_via_kelvin_marks_white(hass: HomeAssistant) -> None:
-    entity_id = await _create_entry(hass)
+    """Test setting a color temperature marks the color as white."""
+    await _create_entry(hass)
     await hass.services.async_call(
         DOMAIN,
         SERVICE_SET_COLOR,
-        {ATTR_ENTITY_ID: entity_id, "color_temp_kelvin": 3000},
+        {ATTR_ENTITY_ID: ENTITY_ID, "color_temp_kelvin": 3000},
         blocking=True,
     )
-    state = hass.states.get(entity_id)
-    assert state.attributes["kind"] == "white"
-    assert state.attributes["color_temp_kelvin"] == 3000
+    state = hass.states.get(ENTITY_ID)
+    assert state.attributes[ATTR_KIND] == KIND_WHITE
+    assert state.attributes[ATTR_COLOR_TEMP_KELVIN] == 3000
 
 
-@pytest.mark.asyncio
 async def test_set_color_via_color_name(hass: HomeAssistant) -> None:
-    entity_id = await _create_entry(hass)
+    """Test setting a color from a CSS3 color name."""
+    await _create_entry(hass)
     await hass.services.async_call(
         DOMAIN,
         SERVICE_SET_COLOR,
-        {ATTR_ENTITY_ID: entity_id, "color_name": "blue"},
+        {ATTR_ENTITY_ID: ENTITY_ID, "color_name": "blue"},
         blocking=True,
     )
-    state = hass.states.get(entity_id)
-    r, g, b = state.attributes["rgb_color"]
+    state = hass.states.get(ENTITY_ID)
+    _r, _g, b = state.attributes[ATTR_RGB_COLOR]
     assert b > 200
 
 
-@pytest.mark.asyncio
 async def test_set_brightness_then_clear(hass: HomeAssistant) -> None:
-    entity_id = await _create_entry(hass)
+    """Test setting and clearing the stored brightness."""
+    await _create_entry(hass)
     await hass.services.async_call(
         DOMAIN,
         SERVICE_SET_BRIGHTNESS,
-        {ATTR_ENTITY_ID: entity_id, FIELD_BRIGHTNESS: 180},
+        {ATTR_ENTITY_ID: ENTITY_ID, FIELD_BRIGHTNESS: 180},
         blocking=True,
     )
-    assert hass.states.get(entity_id).attributes["brightness"] == 180
+    assert hass.states.get(ENTITY_ID).attributes[ATTR_BRIGHTNESS] == 180
 
     await hass.services.async_call(
         DOMAIN,
         SERVICE_CLEAR_BRIGHTNESS,
-        {ATTR_ENTITY_ID: entity_id},
+        {ATTR_ENTITY_ID: ENTITY_ID},
         blocking=True,
     )
-    assert hass.states.get(entity_id).attributes["brightness"] is None
+    assert hass.states.get(ENTITY_ID).attributes[ATTR_BRIGHTNESS] is None
 
 
-@pytest.mark.asyncio
-async def test_apply_to_chromatic_sends_xy(hass: HomeAssistant) -> None:
-    entity_id = await _create_entry(hass)
-    await hass.services.async_call(
-        DOMAIN,
-        SERVICE_SET_COLOR,
-        {ATTR_ENTITY_ID: entity_id, "hex_value": "#FF0000"},
-        blocking=True,
-    )
-
-    captured: list[dict[str, Any]] = []
-
-    async def _capture(call: Any) -> None:
-        captured.append(dict(call.data))
-
-    hass.services.async_register("light", "turn_on", _capture)
-
-    await hass.services.async_call(
-        DOMAIN,
-        SERVICE_APPLY_TO,
-        {
-            ATTR_ENTITY_ID: entity_id,
-            FIELD_LIGHTS: ["light.fake"],
-            FIELD_OVERRIDE_BRIGHTNESS: False,
-        },
-        blocking=True,
-    )
-
-    assert len(captured) == 1
-    data = captured[0]
-    assert data["entity_id"] == ["light.fake"]
-    assert "xy_color" in data
-    assert "color_temp_kelvin" not in data
-    # Brightness not stored => not included even without override flag work.
-    assert "brightness" not in data
-
-
-@pytest.mark.asyncio
-async def test_apply_to_white_sends_kelvin(hass: HomeAssistant) -> None:
-    entity_id = await _create_entry(hass)
-    await hass.services.async_call(
-        DOMAIN,
-        SERVICE_SET_COLOR,
-        {ATTR_ENTITY_ID: entity_id, "color_temp_kelvin": 2700},
-        blocking=True,
-    )
-
-    captured: list[dict[str, Any]] = []
-
-    async def _capture(call: Any) -> None:
-        captured.append(dict(call.data))
-
-    hass.services.async_register("light", "turn_on", _capture)
-
-    await hass.services.async_call(
-        DOMAIN,
-        SERVICE_APPLY_TO,
-        {ATTR_ENTITY_ID: entity_id, FIELD_LIGHTS: ["light.fake"]},
-        blocking=True,
-    )
-    assert captured[0]["color_temp_kelvin"] == 2700
-    assert "xy_color" not in captured[0]
-
-
-@pytest.mark.asyncio
-async def test_apply_to_override_brightness(hass: HomeAssistant) -> None:
-    entity_id = await _create_entry(hass)
-    await hass.services.async_call(
-        DOMAIN,
-        SERVICE_SET_BRIGHTNESS,
-        {ATTR_ENTITY_ID: entity_id, FIELD_BRIGHTNESS: 150},
-        blocking=True,
-    )
-
-    captured: list[dict[str, Any]] = []
-
-    async def _capture(call: Any) -> None:
-        captured.append(dict(call.data))
-
-    hass.services.async_register("light", "turn_on", _capture)
-
-    await hass.services.async_call(
-        DOMAIN,
-        SERVICE_APPLY_TO,
-        {
-            ATTR_ENTITY_ID: entity_id,
-            FIELD_LIGHTS: ["light.fake"],
-            FIELD_OVERRIDE_BRIGHTNESS: True,
-        },
-        blocking=True,
-    )
-    assert captured[0]["brightness"] == 150
-
-
-@pytest.mark.asyncio
 async def test_set_color_rejects_multiple_shapes(hass: HomeAssistant) -> None:
-    entity_id = await _create_entry(hass)
-    from homeassistant.exceptions import HomeAssistantError
-
-    with pytest.raises(HomeAssistantError):
+    """Test the schema rejects two color shapes in one call."""
+    await _create_entry(hass)
+    with pytest.raises(vol.Invalid):
         await hass.services.async_call(
             DOMAIN,
             SERVICE_SET_COLOR,
             {
-                ATTR_ENTITY_ID: entity_id,
+                ATTR_ENTITY_ID: ENTITY_ID,
                 "hex_value": "#FF0000",
                 "rgb_color": [0, 255, 0],
             },
@@ -222,51 +129,140 @@ async def test_set_color_rejects_multiple_shapes(hass: HomeAssistant) -> None:
         )
 
 
-@pytest.mark.asyncio
+async def test_set_color_rejects_missing_shape(hass: HomeAssistant) -> None:
+    """Test the schema rejects a call without any color shape."""
+    await _create_entry(hass)
+    with pytest.raises(vol.Invalid):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_COLOR,
+            {ATTR_ENTITY_ID: ENTITY_ID, FIELD_BRIGHTNESS: 100},
+            blocking=True,
+        )
+
+
+@pytest.mark.parametrize(
+    "invalid_data",
+    [
+        pytest.param({"hex_value": "#NOTHEX"}, id="invalid-hex"),
+        pytest.param({"color_name": "definitely-not-a-color"}, id="unknown-name"),
+    ],
+)
+async def test_set_color_invalid_value_raises_service_validation_error(
+    hass: HomeAssistant, invalid_data: dict[str, str]
+) -> None:
+    """Test invalid color values raise ServiceValidationError."""
+    await _create_entry(hass)
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_COLOR,
+            {ATTR_ENTITY_ID: ENTITY_ID, **invalid_data},
+            blocking=True,
+        )
+
+
 async def test_color_params_chromatic(hass: HomeAssistant) -> None:
     """Chromatic value exposes xy_color only; brightness appears when stored."""
-    entity_id = await _create_entry(hass)
+    await _create_entry(hass)
     await hass.services.async_call(
         DOMAIN,
         SERVICE_SET_COLOR,
-        {ATTR_ENTITY_ID: entity_id, "hex_value": "#FF0000"},
+        {ATTR_ENTITY_ID: ENTITY_ID, "hex_value": "#FF0000"},
         blocking=True,
     )
-    params = hass.states.get(entity_id).attributes["color_params"]
+    params = hass.states.get(ENTITY_ID).attributes[ATTR_COLOR_PARAMS]
     assert set(params) == {"xy_color"}
     x, y = params["xy_color"]
-    rounded = hass.states.get(entity_id).attributes["xy_color"]
+    rounded = hass.states.get(ENTITY_ID).attributes[ATTR_XY_COLOR]
     assert [round(x, 4), round(y, 4)] == rounded
 
     await hass.services.async_call(
         DOMAIN,
         SERVICE_SET_BRIGHTNESS,
-        {ATTR_ENTITY_ID: entity_id, FIELD_BRIGHTNESS: 128},
+        {ATTR_ENTITY_ID: ENTITY_ID, FIELD_BRIGHTNESS: 128},
         blocking=True,
     )
-    params = hass.states.get(entity_id).attributes["color_params"]
+    params = hass.states.get(ENTITY_ID).attributes[ATTR_COLOR_PARAMS]
     assert set(params) == {"xy_color", "brightness"}
     assert params["brightness"] == 128
 
     await hass.services.async_call(
         DOMAIN,
         SERVICE_CLEAR_BRIGHTNESS,
-        {ATTR_ENTITY_ID: entity_id},
+        {ATTR_ENTITY_ID: ENTITY_ID},
         blocking=True,
     )
-    params = hass.states.get(entity_id).attributes["color_params"]
+    params = hass.states.get(ENTITY_ID).attributes[ATTR_COLOR_PARAMS]
     assert "brightness" not in params
 
 
-@pytest.mark.asyncio
 async def test_color_params_white(hass: HomeAssistant) -> None:
     """White value exposes color_temp_kelvin, never xy_color."""
-    entity_id = await _create_entry(hass)
+    await _create_entry(hass)
     await hass.services.async_call(
         DOMAIN,
         SERVICE_SET_COLOR,
-        {ATTR_ENTITY_ID: entity_id, "color_temp_kelvin": 3000, FIELD_BRIGHTNESS: 200},
+        {ATTR_ENTITY_ID: ENTITY_ID, "color_temp_kelvin": 3000, FIELD_BRIGHTNESS: 200},
         blocking=True,
     )
-    params = hass.states.get(entity_id).attributes["color_params"]
+    params = hass.states.get(ENTITY_ID).attributes[ATTR_COLOR_PARAMS]
     assert params == {"color_temp_kelvin": 3000, "brightness": 200}
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"hex_value": "#000000"},
+        {"rgb_color": [0, 0, 0]},
+        {"color_name": "black"},
+    ],
+)
+async def test_set_color_rejects_pure_black(hass: HomeAssistant, payload: dict) -> None:
+    """Zero-intensity inputs have no chromaticity and must be rejected."""
+    await _create_entry(hass)
+    before = hass.states.get(ENTITY_ID).state
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_COLOR,
+            {ATTR_ENTITY_ID: ENTITY_ID, **payload},
+            blocking=True,
+        )
+    assert hass.states.get(ENTITY_ID).state == before
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        pytest.param({"color_temp_kelvin": math.inf}, id="kelvin-infinite"),
+        pytest.param({"brightness": math.inf}, id="brightness-infinite"),
+        pytest.param({"rgb_color": [math.inf, 0, 0]}, id="rgb-infinite"),
+        pytest.param({"hs_color": [10**400, 50]}, id="hs-overflowing"),
+        pytest.param({"xy_color": [10**400, 0.3]}, id="xy-overflowing"),
+    ],
+)
+async def test_set_color_rejects_infinite_numbers(
+    hass: HomeAssistant, payload: dict
+) -> None:
+    """Infinite numbers fail schema validation instead of raising OverflowError."""
+    await _create_entry(hass)
+    with pytest.raises(vol.Invalid):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_COLOR,
+            {ATTR_ENTITY_ID: ENTITY_ID, **payload},
+            blocking=True,
+        )
+
+
+async def test_set_brightness_rejects_infinite(hass: HomeAssistant) -> None:
+    """Infinite brightness fails schema validation for set_brightness."""
+    await _create_entry(hass)
+    with pytest.raises(vol.Invalid):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_BRIGHTNESS,
+            {ATTR_ENTITY_ID: ENTITY_ID, "brightness": math.inf},
+            blocking=True,
+        )

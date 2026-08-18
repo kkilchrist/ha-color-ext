@@ -1,41 +1,26 @@
 set_color:
-  name: Set color
-  description: >
-    Set the stored color. Provide exactly one of hex_value, rgb_color, hs_color,
-    xy_color, color_temp_kelvin, or color_name. Brightness is optional and
-    independent of the color shape.
   target:
     entity:
       integration: color
       domain: color
   fields:
     hex_value:
-      name: Hex
-      description: 'Hex color, e.g. "#FF8000".'
       example: "#FF8000"
       selector:
         text:
     rgb_color:
-      name: RGB
-      description: "RGB triplet, components 0-255."
       example: "[255, 128, 0]"
       selector:
         color_rgb:
     hs_color:
-      name: HS
-      description: "Hue (0-360) and saturation (0-100)."
       example: "[30, 100]"
       selector:
         object:
     xy_color:
-      name: CIE xy
-      description: "CIE 1931 chromaticity (x, y), each 0-1."
       example: "[0.5, 0.4]"
       selector:
         object:
     color_temp_kelvin:
-      name: Color temperature
-      description: "Color temperature in Kelvin (sets kind=white)."
       example: 4000
       selector:
         color_temp:
@@ -43,14 +28,10 @@ set_color:
           min: 1000
           max: 20000
     color_name:
-      name: Color name
-      description: "CSS3 color name, e.g. 'crimson'."
       example: crimson
       selector:
         text:
     brightness:
-      name: Brightness
-      description: "Optional brightness 0-255 stored alongside the color."
       example: 200
       selector:
         number:
@@ -59,16 +40,12 @@ set_color:
           mode: slider
 
 set_brightness:
-  name: Set brightness
-  description: "Set the stored brightness to a value 0-255."
   target:
     entity:
       integration: color
       domain: color
   fields:
     brightness:
-      name: Brightness
-      description: "Brightness 0-255."
       required: true
       example: 180
       selector:
@@ -78,10 +55,6 @@ set_brightness:
           mode: slider
 
 clear_brightness:
-  name: Clear brightness
-  description: >
-    Clear the stored brightness so apply_to does not push a brightness value
-    even when override_brightness is true.
   target:
     entity:
       integration: color

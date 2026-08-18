@@ -321,10 +321,16 @@ for the multi-step shape; `const.py` for field names.
 ## Development
 
 ```bash
-python3 -m venv .venv
+python3.13 -m venv .venv
 .venv/bin/pip install -r requirements_test.txt
 .venv/bin/python -m pytest tests/
 ```
+
+`custom_components/color/` is kept in sync with the version proposed for Home
+Assistant core ([core#177605](https://github.com/home-assistant/core/pull/177605)).
+Keep the diff against that branch small: the deliberate deltas are the
+`apply_to` action, the manifest, and parenthesized `except` tuples (core
+targets Python 3.14 and uses PEP 758 syntax that Python 3.13 rejects).
 
 Unit tests cover the colorimetric normalizer; integration tests use
 `pytest-homeassistant-custom-component` and exercise the full config-flow →
