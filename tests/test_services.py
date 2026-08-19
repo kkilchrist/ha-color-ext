@@ -3,11 +3,8 @@
 import math
 
 import pytest
-import voluptuous as vol
-from homeassistant.const import ATTR_ENTITY_ID, CONF_NAME
-from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ServiceValidationError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
+import voluptuous as vol
 
 from custom_components.color.const import (
     ATTR_BRIGHTNESS,
@@ -26,6 +23,9 @@ from custom_components.color.const import (
     SERVICE_SET_BRIGHTNESS,
     SERVICE_SET_COLOR,
 )
+from homeassistant.const import ATTR_ENTITY_ID, CONF_NAME
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 
 ENTITY_ID = "color.test_color"
 

@@ -22,6 +22,15 @@ target-version = "py313"
 line-length = 88
 extend-exclude = [".reference"]
 
+[tool.ruff.lint.isort]
+# Match home-assistant/core, so synced files keep their upstream import order.
+force-sort-within-sections = true
+# `homeassistant` is a third-party dependency here, but grouping it the way
+# core does keeps the synced files byte-identical to upstream.
+known-first-party = ["homeassistant"]
+combine-as-imports = true
+split-on-trailing-comma = false
+
 [tool.ruff.lint]
 select = [
     "E",   # pycodestyle errors

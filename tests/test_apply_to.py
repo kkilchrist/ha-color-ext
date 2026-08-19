@@ -8,8 +8,6 @@ because 0.1.x installations already call it, so it needs its own coverage.
 from typing import Any
 
 import pytest
-from homeassistant.const import ATTR_ENTITY_ID, CONF_NAME
-from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_mock_service,
@@ -30,6 +28,8 @@ from custom_components.color.const import (
     SERVICE_SET_BRIGHTNESS,
     SERVICE_SET_COLOR,
 )
+from homeassistant.const import ATTR_ENTITY_ID, CONF_NAME
+from homeassistant.core import HomeAssistant
 
 
 async def _create_entry(hass: HomeAssistant, name: str = "C", **data: Any) -> str:

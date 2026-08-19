@@ -2,10 +2,6 @@
 
 import math
 
-from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import CONF_NAME
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.color.const import (
@@ -26,6 +22,10 @@ from custom_components.color.const import (
     MODE_CHROMATIC,
     MODE_WHITE,
 )
+from homeassistant.config_entries import ConfigEntryState
+from homeassistant.const import CONF_NAME
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 
 ENTITY_ID = "color.couch_color"
 

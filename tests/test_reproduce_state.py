@@ -1,8 +1,6 @@
 """Scene reproduce_state tests for the Color helper."""
 
 import pytest
-from homeassistant.const import CONF_NAME
-from homeassistant.core import HomeAssistant, State
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.color.const import (
@@ -20,6 +18,8 @@ from custom_components.color.const import (
     MODE_CHROMATIC,
 )
 from custom_components.color.reproduce_state import async_reproduce_states
+from homeassistant.const import CONF_NAME
+from homeassistant.core import HomeAssistant, State
 
 ENTITY_ID = "color.test_color"
 

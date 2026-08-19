@@ -4,10 +4,6 @@ import math
 from typing import Any
 
 import pytest
-from homeassistant.config_entries import SOURCE_USER
-from homeassistant.const import ATTR_ICON, CONF_ICON, CONF_NAME
-from homeassistant.core import HomeAssistant
-from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.color.config_flow import _coerce_color_input
@@ -21,6 +17,10 @@ from custom_components.color.const import (
     MODE_CHROMATIC,
     MODE_WHITE,
 )
+from homeassistant.config_entries import SOURCE_USER
+from homeassistant.const import ATTR_ICON, CONF_ICON, CONF_NAME
+from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import FlowResultType
 
 
 async def test_flow_chromatic_path(hass: HomeAssistant) -> None:

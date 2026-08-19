@@ -13,9 +13,6 @@ Setup now runs through a config-entry-backed platform, so the registry entry
 is owned by the entry and removed with it.
 """
 
-from homeassistant.const import CONF_NAME
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.color.const import (
@@ -24,6 +21,9 @@ from custom_components.color.const import (
     DOMAIN,
     MODE_CHROMATIC,
 )
+from homeassistant.const import CONF_NAME
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 
 ENTITY_ID = "color.couch_color"
 
