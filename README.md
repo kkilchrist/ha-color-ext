@@ -182,7 +182,13 @@ in your automation on the helper's `kind` attribute before calling
 | `color_temp_kelvin` | Stored value when `kind == "white"`; `null` for chromatic colors |
 | `brightness` | `0-255` or `null` |
 | `hex_color` | Same as state, repeated for convenience |
-| `source_hex` | Exact echo of the user's input when it had a hex equivalent (hex/rgb/hs/color_name). `null` for xy/kelvin inputs. Read this when you need the bytes the user picked, independent of the gamut-mapped value used for `apply_to`. |
+
+Every accepted input shape round-trips exactly: the attribute matching the
+shape you set echoes your input verbatim (a hex is only normalized to
+uppercase). Set `hex_value`/`rgb_color`/`color_name` and `hex_color` and
+`rgb_color` are the exact sRGB bytes; set `hs_color` or `xy_color` and that
+attribute echoes your unrounded values. The remaining representations are
+derived.
 
 ## Blueprints and examples
 
@@ -260,14 +266,13 @@ data:
   brightness: 255          # explicit; ignores stored brightness
 ```
 
-For exact reads (no gamut drift), use `source_hex`:
+Reads are exact: the state is the literal hex you set (for hex/rgb/name
+inputs), and `hs_color`/`xy_color` echo those shapes unrounded when they were
+the input.
 
 ```yaml
-{{ state_attr('color.x', 'source_hex') or state('color.x') }}
+{{ states('color.x') }}
 ```
-
-This returns the literal hex the user picked (when set via hex/rgb/hs/name),
-or falls back to the gamut-mapped state for xy/kelvin inputs.
 
 ## Creating entries programmatically
 

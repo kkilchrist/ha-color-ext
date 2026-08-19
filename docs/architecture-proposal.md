@@ -73,8 +73,9 @@ xyY is device-independent and is what Hue and the light component's color pipeli
 natively. The `kind` flag exists so tunable-white targets receive a true
 `color_temp_kelvin` instead of a lossy xy→CCT approximation. All other representations
 (`hex`, `rgb_color`, `hs_color`, `color_temp_kelvin`) are derived and exposed as state
-attributes; state is the hex string, plus a `source_hex` attribute echoing the user's
-exact input when one existed.
+attributes; state is the hex string. The stored value also keeps the user's exact
+input shape, so the attribute matching that shape echoes the input verbatim rather
+than a lossy xy round-trip.
 
 ### Services
 
