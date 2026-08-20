@@ -182,6 +182,8 @@ in your automation on the helper's `kind` attribute before calling
 | `color_temp_kelvin` | Stored value when `kind == "white"`; `null` for chromatic colors |
 | `brightness` | `0-255` or `null` |
 | `hex_color` | Same as state, repeated for convenience |
+| `source` | The exact input you set, e.g. `{"rgb_color": [255, 158, 77]}` |
+| `source_type` | The shape you set — one of `hex_value`, `rgb_color`, `hs_color`, `xy_color`, `color_temp_kelvin`, `color_name` |
 
 Every accepted input shape round-trips exactly: the attribute matching the
 shape you set echoes your input verbatim (a hex is only normalized to
@@ -189,6 +191,19 @@ uppercase). Set `hex_value`/`rgb_color`/`color_name` and `hex_color` and
 `rgb_color` are the exact sRGB bytes; set `hs_color` or `xy_color` and that
 attribute echoes your unrounded values. The remaining representations are
 derived.
+
+The read-only `source` attribute additionally records *which* shape you set,
+as a single-entry dict of the exact validated value — so automations and
+cards can tell an authored `rgb_color` apart from one derived out of an
+`hs_color` input, and can replicate the precise original value elsewhere.
+Its payload splats directly back into `color.set_color`, mirroring how
+`color_params` splats into `light.turn_on`. The companion `source_type`
+attribute is the dict's key on its own, so a template can branch on the
+authored shape without unpacking the dict:
+
+```yaml
+{% if state_attr('color.gym_work_color', 'source_type') == 'rgb_color' %}
+```
 
 ## Blueprints and examples
 

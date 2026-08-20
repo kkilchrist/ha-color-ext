@@ -75,7 +75,11 @@ natively. The `kind` flag exists so tunable-white targets receive a true
 (`hex`, `rgb_color`, `hs_color`, `color_temp_kelvin`) are derived and exposed as state
 attributes; state is the hex string. The stored value also keeps the user's exact
 input shape, so the attribute matching that shape echoes the input verbatim rather
-than a lossy xy round-trip.
+than a lossy xy round-trip. A read-only `source` attribute exposes that exact input
+as a single-entry dict (e.g. `{"rgb_color": [255, 158, 77]}`) splattable back into
+`set_color`, so consumers can both identify which shape was authored and replicate
+the precise original value; a companion `source_type` attribute carries the dict's
+key alone for easy branching in templates.
 
 ### Services
 

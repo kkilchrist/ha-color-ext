@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Exact round-trip for every input shape.** The attribute matching the shape
+  you set echoes your input verbatim (a hex is only normalized to uppercase):
+  `hex_value`/`rgb_color`/`color_name` inputs resolve to their exact sRGB
+  bytes, and `hs_color`/`xy_color` echo unrounded. Rounding now applies only
+  to derived views, and a typed hex is the state string byte for byte.
+- **`source` attribute.** A read-only single-entry dict recording exactly what
+  you set — e.g. `{"rgb_color": [255, 158, 77]}` — so automations, cards, and
+  other integrations can tell the authored shape apart from derived views and
+  reuse the precise original value. It splats directly back into
+  `color.set_color`, and scene snapshots now restore from it, so a scene
+  brings back the exact input rather than an inferred equivalent. A companion
+  `source_type` attribute exposes the dict's key alone (e.g. `"rgb_color"`)
+  for easy branching in templates.
+
+### Removed
+
+- The `source_hex` attribute; superseded by the exact echo and `source`.
+
 ## 0.2.0
 
 ### Breaking change: the domain is now `color`, not `input_color`
