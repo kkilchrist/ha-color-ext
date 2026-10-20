@@ -18,6 +18,7 @@ from homeassistant.helpers.service import remove_entity_service_fields
 from homeassistant.helpers.typing import ConfigType, VolDictType
 from homeassistant.util.hass_dict import HassKey
 
+from .card import async_register_card
 from .color_math import COLOR_SHAPE_FIELDS, ColorInputError
 from .const import (
     DOMAIN,
@@ -157,6 +158,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         )
 
     component.async_register_entity_service(SERVICE_APPLY_TO, APPLY_TO_SCHEMA, apply_to)
+
+    await async_register_card(hass)
 
     return True
 

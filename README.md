@@ -67,6 +67,29 @@ Each color you want is one integration instance (one config entry per color).
 Copy `custom_components/color/` into `<config>/custom_components/`,
 restart Home Assistant, and add the integration from the UI.
 
+## Dashboard card
+
+The integration ships a Lovelace card and loads it on every dashboard, so
+there is nothing extra to install or add as a resource. It shows the color as
+a tappable swatch with the browser's color picker, plus a Color/White toggle
+that swaps the picker for a kelvin slider (2000–6500 K).
+
+![Dashboard card in chromatic and white modes](docs/card-screenshot.png)
+
+```yaml
+type: custom:input-color-card
+entity: color.couch_color
+name: Couch # optional
+```
+
+Picks are sent to `color.set_color` (debounced ~150 ms while dragging);
+switching modes commits whichever value is showing.
+
+If you installed the old standalone
+[ha-color-ext-card](https://github.com/kkilchrist/ha-color-ext-card)
+repository, remove it from HACS and delete its dashboard resource. Your
+`custom:input-color-card` cards keep working unchanged.
+
 ## Services
 
 ### `color.set_color`
@@ -330,9 +353,9 @@ for the multi-step shape; `const.py` for field names.
   tunable-white target, HA's light component picks the closest representable
   white internally — that approximation lives in the light integration, not
   this helper.
-- **No custom color picker UI yet.** v1 uses Home Assistant's built-in
-  `color_rgb` selector in the config flow and the standard attribute display
-  for the more-info panel. Custom Lovelace UI is on the roadmap.
+- **No custom more-info dialog.** The config flow uses Home Assistant's
+  built-in `color_rgb` selector and the more-info panel shows the standard
+  attribute display; the [dashboard card](#dashboard-card) is the picker UI.
 - **Not in the Helpers picker.** Home Assistant's frontend hardcodes which
   domains appear under Settings → Helpers → Add Helper. Until that registry
   is patched, this integration appears under Settings → Devices & Services
@@ -349,8 +372,20 @@ python3.13 -m venv .venv
 `custom_components/color/` is kept in sync with the version proposed for Home
 Assistant core ([core#177605](https://github.com/home-assistant/core/pull/177605)).
 Keep the diff against that branch small: the deliberate deltas are the
-`apply_to` action, the manifest, and parenthesized `except` tuples (core
-targets Python 3.14 and uses PEP 758 syntax that Python 3.13 rejects).
+`apply_to` action, the bundled card (`card.py`, `www/`, and the one-line
+`async_register_card` call), the manifest, and parenthesized `except` tuples
+(core targets Python 3.14 and uses PEP 758 syntax that Python 3.13 rejects).
+
+The card's source is in `frontend/`. Its release build is committed to
+`custom_components/color/www/` (CI fails if it is stale):
+
+```bash
+cd frontend
+npm install
+npm run lint
+npm run build:release   # writes ../custom_components/color/www/input-color-card.js
+npm run dev             # watch build with inline sourcemap; don't commit it
+```
 
 Unit tests cover the colorimetric normalizer; integration tests use
 `pytest-homeassistant-custom-component` and exercise the full config-flow →

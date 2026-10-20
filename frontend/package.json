@@ -1,0 +1,41 @@
+{
+  "name": "input-color-card",
+  "version": "0.3.1",
+  "description": "Lovelace card bundled with the color helper integration",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "rollup -c",
+    "build:release": "RELEASE=true rollup -c",
+    "dev": "rollup -c --watch",
+    "lint": "tsc --noEmit"
+  },
+  "keywords": [
+    "home-assistant",
+    "lovelace",
+    "hacs",
+    "custom-card",
+    "color"
+  ],
+  "author": "Kameron Kilchrist",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kkilchrist/ha-color-ext.git"
+  },
+  "homepage": "https://github.com/kkilchrist/ha-color-ext",
+  "bugs": {
+    "url": "https://github.com/kkilchrist/ha-color-ext/issues"
+  },
+  "dependencies": {
+    "lit": "^3.1.4"
+  },
+  "devDependencies": {
+    "@rollup/plugin-node-resolve": "^15.2.3",
+    "@rollup/plugin-terser": "^0.4.4",
+    "@rollup/plugin-typescript": "^11.1.6",
+    "rollup": "^4.18.0",
+    "tslib": "^2.6.3",
+    "typescript": "^5.5.3"
+  }
+}
