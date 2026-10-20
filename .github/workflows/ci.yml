@@ -11,7 +11,7 @@ jobs:
     name: Hassfest validation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Run hassfest
         uses: home-assistant/actions/hassfest@master
 
@@ -19,18 +19,43 @@ jobs:
     name: HACS validation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: HACS Action
         uses: hacs/action@main
         with:
           category: integration
 
+  card:
+    name: Card lint + build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: Lint (tsc --noEmit)
+        run: npm run lint
+      - name: Build (release / minified)
+        run: npm run build:release
+      - name: Verify committed build matches source
+        run: |
+          if ! git diff --exit-code -- ../custom_components/color/www/; then
+            echo "::error::The bundled card is out of date. Run 'npm run build:release' in frontend/ and commit the result."
+            exit 1
+          fi
+
   lint:
     name: Ruff
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
       - name: Install ruff
@@ -44,8 +69,8 @@ jobs:
     name: Pytest
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
       - name: Install test deps

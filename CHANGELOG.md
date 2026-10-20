@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.1
+
+### Added
+
+- **The dashboard card now ships with the integration.** The card from the
+  separate `ha-color-ext-card` repository is bundled under
+  `custom_components/color/www/` and loaded on every dashboard automatically,
+  YAML-mode dashboards included; no resource to add. `custom:input-color-card`
+  configs are unchanged. If you installed the standalone card, remove it from
+  HACS and delete its dashboard resource.
+
 ## 0.3.0
 
 ### Added
