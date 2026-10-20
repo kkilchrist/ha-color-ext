@@ -2,6 +2,8 @@
 
 import math
 
+from pytest_homeassistant_custom_component.common import MockConfigEntry
+
 from custom_components.color.const import (
     ATTR_BRIGHTNESS,
     ATTR_COLOR_TEMP_KELVIN,
@@ -23,8 +25,6 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
-
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 ENTITY_ID = "color.couch_color"
 
