@@ -4,6 +4,10 @@ import math
 from typing import Any
 
 import pytest
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    mock_restore_cache_with_extra_data,
+)
 
 from custom_components.color.const import (
     ATTR_BRIGHTNESS,
@@ -31,8 +35,6 @@ from custom_components.color.const import (
 from custom_components.color.reproduce_state import async_reproduce_states
 from homeassistant.const import ATTR_ENTITY_ID, ATTR_ICON, CONF_ICON, CONF_NAME
 from homeassistant.core import HomeAssistant, State
-
-from pytest_homeassistant_custom_component.common import MockConfigEntry, mock_restore_cache_with_extra_data
 
 ENTITY_ID = "color.test_color"
 
